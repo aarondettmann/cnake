@@ -1,9 +1,9 @@
-/*******************************************************
- * Datei: cnake.c                                      *
- * Datum: 16.10.2014 (27.12.2014)                      *
- * Autor: Aaron Dettmann                               *
- * Zweck: Cnake v0.3.8 - Primitives "Snake"-Spiel in C *
- *******************************************************/
+/******************************************************
+ * File:    cnake.c                                   *
+ * Date:    16.10.2014 & 27.12.2014 (2026-07-01)      *
+ * Author:  Aaron Dettmann                            *
+ * Purpose: Cnake - Primitive snake-game written in C *
+ ******************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +13,7 @@
 /*---------- Version ----------*/
 #define VERSION "0.3.8"
 
-/*---------- Farben ----------*/
+/*---------- Colors ----------*/
 #define RED "\x1B[31m" /* red */
 #define GRN "\x1B[32m" /* green */
 #define YEL "\x1B[33m" /* yellow */
@@ -22,13 +22,13 @@
 
 /*---------- Escape Codes ----------*/
 /*
-   "\033[H"  // Move cursor to upper-left corner of the screen
+   "\033[H"  // Move cursor to the upper-left corner of the screen
    "\033[0J" // Clear from the cursor to the end of the screen
 */
 
 #define CLEAR "\033[H\033[0J"
 
-/*---------- Funktionsprototypen ----------*/
+/*---------- Function Prototypes ----------*/
 void sig_handler(int signo);
 void hl(void);
 void grenze(int length);
@@ -43,31 +43,31 @@ void ausgabe(int**, int, char*);
 
 int main(int argc, char *argv[])
 {
-    /*---------- Deklaration der Variablen ----------*/
-    int  i, j,                   /* Schleifen-Laufvariablen                                      */
-         bs = 0,                 /* Board size --> Seitenlaenge des Spielfeldes                  */
-         x, y, x_old, y_old,     /* Positionskoordinaten                                         */
-         exit = 0,               /* In Hauptschleife ausgewertet --> Game Over!; Gewonnen!; ...  */
-         length = 1,             /* Laenge der Schlange                                          */
-         numofobs,               /* "Number of obstacles"                                        */
-         stats[3] = { 0, 0, 0 }, /* Statistics [number of moves][eaten snacks][eaten poison]     */
-         show = 0,               /* Show/Noshow                                                  */
-         **board;                /* Spielbrett                                                   */
+    /*---------- Variable Declarations ----------*/
+    int  i, j,                   /* Loop variables                                              */
+         bs = 0,                 /* Board size --> side length of the playing field             */
+         x, y, x_old, y_old,     /* Position coordinates                                        */
+         exit = 0,               /* Evaluated in the main loop --> Game Over!; Win!; ...        */
+         length = 1,             /* Length of the snake                                         */
+         numofobs,               /* Number of obstacles                                         */
+         stats[3] = { 0, 0, 0 }, /* Statistics [moves][snacks eaten][poison eaten]              */
+         show = 0,               /* Show/Hide debug output                                      */
+         **board;                /* Game board                                                  */
 
-    char cmd      = 'x', /* Befehl            */
-         terra    = ' ', /* ( 0) Feld / Boden */
-         body     = '=', /* (>0) Koerper      */
-         head     = '>', /* (-1) Kopf         */
-         obstacle = '#', /* (-2) Hindernisse  */
-         snack    = '*', /* (-3) Snack        */
-         poison   = '!'; /* (-4) Gift         */
+    char cmd      = 'x', /* Command        */
+         terra    = ' ', /* ( 0) Empty tile */
+         body     = '=', /* (>0) Body       */
+         head     = '>', /* (-1) Head       */
+         obstacle = '#', /* (-2) Obstacle   */
+         snack    = '*', /* (-3) Snack      */
+         poison   = '!'; /* (-4) Poison     */
 
     x = y = x_old = y_old = 0;
 
-    /*---------- signal handling ----------*/
+    /*---------- Signal Handling ----------*/
     signal(SIGINT, sig_handler);
 
-    /*---------- Festlegung der Spielfeldgroeße ----------*/
+    /*---------- Determine Board Size ----------*/
     hl();
 
     if(argc>1)
@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
     {
         do
         {
-            printf("Lege die Spielfeldgroesse fest [4-10]: ");
+            printf("Choose the board size [4-10]: ");
             if( !scanf(" %d", &bs))
                 return 1;
         }
@@ -95,18 +95,18 @@ int main(int argc, char *argv[])
         if( ( board[i] = (int*)malloc(bs*sizeof(int)) ) == NULL )
             return 2;
 
-    /*---------- Belegung des Spielfeldes ----------*/
+    /*---------- Initialize the Board ----------*/
     for( i = 0; i < bs; i++)
         for( j = 0; j < bs; j++ )
             board[i][j] = 0;
 
-    /*---------- Seed fuer rand() ----------*/
+    /*---------- Seed rand() ----------*/
     srand(time(NULL));
 
-    /*---------- Startposition ----------*/
+    /*---------- Starting Position ----------*/
     board[y][x] = -1;        /* head */
 
-    /*---------- Erzeugung zufaelliger Postionen ----------*/
+    /*---------- Generate Random Positions ----------*/
     numofobs = (int)( ((bs*bs)/10)+1 );
 
     for(i=0; i<numofobs; i++)
@@ -115,13 +115,13 @@ int main(int argc, char *argv[])
     gen_rand_pos(&x, &y, board, bs, -4);                /* poison */
     gen_rand_pos(&x, &y, board, bs, -3);                /* snack */
 
-    /*---------- Spielbeginn mit Hauptschleife ----------*/
+    /*---------- Start Main Game Loop ----------*/
     hl();
-    printf("==> Spielfeld: %dx%d\n\n", bs, bs);
+    printf("==> Board: %dx%d\n\n", bs, bs);
 
     while(cmd != 'q')
     {
-        /*---------- Aufbau und Ausgabe des Spielfeldes ----------*/
+        /*---------- Draw the Game Board ----------*/
         grenze(bs);
 
         for(i=0; i<bs; i++)
@@ -140,17 +140,17 @@ int main(int argc, char *argv[])
 
             printf(GRN "|\t");
 
-                 if(i == 0) printf(RED "%c%c>\t" RES "Schlange  (%d)", body, body, length );
+                 if(i == 0) printf(RED "%c%c>\t" RES "Snake     (%d)", body, body, length );
             else if(i == 1) printf(YEL "%c  \t"  RES "Snack     (%d)", snack, stats[1]    );
-            else if(i == 2) printf(GRN "%c  \t"  RES "Gift      (%d)", poison, stats[2]   );
-            else if(i == 3) printf(BLU "%c  \t"  RES "Hindernis", obstacle   );
+            else if(i == 2) printf(GRN "%c  \t"  RES "Poison    (%d)", poison, stats[2]   );
+            else if(i == 3) printf(BLU "%c  \t"  RES "Obstacle", obstacle   );
 
             printf(RES "\n");
         }
 
         grenze(bs);
 
-        /*---------- Ausgabe der board[][]-Werte - NUR FUER TESTZWECKE! ----------*/
+        /*---------- Display board[][] values - FOR DEBUGGING ONLY! ----------*/
         if(show)
         {
             printf("\n");
@@ -166,34 +166,34 @@ int main(int argc, char *argv[])
             }
         }
 
-        /*---------- Spiel gewonnen oder verloren? ----------*/
+        /*---------- Check Win/Loss Condition ----------*/
         if(exit)
         {
 
             if(exit == 1)
             {
-                printf("\nGEWONNEN!\n");
+                printf("\nYOU WIN!\n");
                 break;
             }
 
-                 if(exit == 2)        printf("\nSchlange!"  RED " %c%c> " RES, body, body );
-            else if(exit == 3)        printf("\nHindernis!" BLU " %c "    RES, obstacle   );
-            else if(exit == 4)        printf("\nGift!"      GRN " %c "    RES, poison     );
+                 if(exit == 2)        printf("\nSnake!"     RED " %c%c> " RES, body, body );
+            else if(exit == 3)        printf("\nObstacle!"  BLU " %c "    RES, obstacle   );
+            else if(exit == 4)        printf("\nPoison!"    GRN " %c "    RES, poison     );
 
             printf("~ GAME OVER!\n");
             break;
         }
 
-        /*---------- Alte Position wird abgespeichert ----------*/
+        /*---------- Save Previous Position ----------*/
         x_old = x;
         y_old = y;
 
-        /*---------- Befehlseingabe ----------*/
+        /*---------- Read Player Command ----------*/
         do
         {
             do
             {
-                printf("\nGib einen Befehl ein [h]: ");
+                printf("\nEnter a command [h]: ");
                 scanf(" %c", &cmd);
             } while(getchar() != '\n');
 
@@ -205,21 +205,21 @@ int main(int argc, char *argv[])
             else if(cmd == 'w')
             {
                 hl();
-                printf("==> Hoch!\n\n");
+                printf("==> Up!\n\n");
                 y -= 1;
                 if(y < 0)        y = bs-1;
             }
             else if(cmd == 's')
             {
                 hl();
-                printf("==> Runter!\n\n");
+                printf("==> Down!\n\n");
                 y += 1;
                 if(y > bs-1)        y = 0;
             }
             else if(cmd == 'a')
             {
                 hl();
-                printf("==> Links!\n\n");
+                printf("==> Left!\n\n");
                 head = '<';
                 x -= 1;
                 if(x < 0)        x = bs-1;
@@ -228,24 +228,24 @@ int main(int argc, char *argv[])
             else if(cmd == 'd')
             {
                 hl();
-                printf("==> Rechts!\n\n");
+                printf("==> Right!\n\n");
                 head = '>';
                 x += 1;
                 if(x > bs-1)        x = 0;
             }
-            else if(cmd == 'c')        /* CHEAT CODE ==> FUER TESTZWECKE */
+            else if(cmd == 'c')        /* CHEAT CODE --> FOR TESTING */
             {
                 hl();
-                printf("==> Laenge +5!\n\n");
+                printf("==> Length +5!\n\n");
                 length += 5;
                 break;
             }
             else if(cmd == 'v')
             {
                 hl();
-                printf("==> Show/Noshow!\n\n");
+                printf("==> Toggle Debug View!\n\n");
                 if(!show)        show = 1;
-                else                show = 0;
+                else             show = 0;
                 break;
             }
             else if(cmd == 'q')
@@ -253,7 +253,7 @@ int main(int argc, char *argv[])
 
             else
             {
-                printf("\nE: Unbekannter Befehl!\n");
+                printf("\nError: Unknown command!\n");
                 continue;
             }
 
@@ -268,19 +268,19 @@ int main(int argc, char *argv[])
         if(cmd == 'v' || cmd == 'c')
             continue;
 
-        /*---------- Ereignisse ----------*/
+        /*---------- Events ----------*/
 
-        if(board[y][x] > 0) /* Zusammenstoss "tail" */
+        if(board[y][x] > 0) /* Collision with snake body */
         {
             exit = 2;
             continue;
         }
-        else if(board[y][x] == -2) /* Zusammenstoss "obstacle" */
+        else if(board[y][x] == -2) /* Collision with obstacle */
         {
             exit = 3;
             continue;
         }
-        else if(board[y][x] == -3) /* "snack" gefunden */
+        else if(board[y][x] == -3) /* Snack found */
         {
             length++;
             stats[1] += 1; /* +1 snack */
@@ -288,9 +288,9 @@ int main(int argc, char *argv[])
             gen_rand_pos(&x, &y, board, bs, -3);
 
         }
-        else if(board[y][x] == -4) /* gift gefunden */
+        else if(board[y][x] == -4) /* Poison found */
         {
-            stats[2] += 1; /* +1 gift */
+            stats[2] += 1; /* +1 poison */
 
             if(length > 1)
             {
@@ -304,53 +304,53 @@ int main(int argc, char *argv[])
             }
         }
 
-        /*---------- Neue Position von "head" ----------*/
-        board[y][x] = -1;              /* Kopfposition */
-        board[y_old][x_old] = length;  /* Laenge der Schlange wird in alter Position gespeichert */
+        /*---------- Update Head Position ----------*/
+        board[y][x] = -1;              /* Head position */
+        board[y_old][x_old] = length;  /* Store the snake length at the previous head position */
 
-        /*---------- Pruefen auf freie Felder ----------*/
-        if(find_element(board, bs, 0) == 0)     /* Spiel gewonnen */
+        /*---------- Check for Free Tiles ----------*/
+        if(find_element(board, bs, 0) == 0)     /* Game won */
         {
             exit = 1;
             continue;
         }
 
-        /*---------- Schwanz der Schlange ----------*/
+        /*---------- Update Snake Tail ----------*/
         for(i=0; i<bs; i++)
             for(j=0; j<bs; j++)
-                if(board[i][j]>0)       /* alle werte >0 sind Koerperteile der Schlange */
+                if(board[i][j] > 0)    /* All values >0 are snake body segments */
                     board[i][j] -= 1;
 
-    } /* ENDE Haupt-while-Schleife */
+    } /* End of main game loop */
 
-    /*---------- Abschluss des Spiels ----------*/
-    printf("\nSchritte:\t%4d\n", stats[0]);
+    /*---------- Game Summary ----------*/
+    printf("\nMoves:\t\t%4d\n", stats[0]);
     printf(  "Snacks:\t\t%4d\n", stats[1]);
-    printf(  "Gift:\t\t%4d\n",   stats[2]);
-    printf(  "Laenge:\t\t%d/%d+\n\n", length, (bs*bs - numofobs - 1));
+    printf(  "Poison:\t%4d\n",   stats[2]);
+    printf(  "Length:\t\t%d/%d+\n\n", length, (bs*bs - numofobs - 1));
 
     return 0;
 
-} /* ENDE main() */
+} /* End of main() */
 
 /*================================*/
-/*---------- Funktionen ----------*/
+/*---------- Functions -----------*/
 /*================================*/
 
-/*---------- signal handling ----------*/
+/*---------- Signal Handling ----------*/
 void sig_handler(int sigint)
 {
     printf(RES "\n\n");
     exit(sigint);
 }
 
-/*---------- Kopfzeile ----------*/
+/*---------- Header ----------*/
 void hl(void)
 {
     printf(CLEAR "#---------- Cnake %s ----------#\n\n", VERSION);
 }
 
-/*---------- Aeussere Spielfeldbegrenzung ----------*/
+/*---------- Draw Outer Board Border ----------*/
 void grenze(int length)
 {
     int n;
@@ -363,19 +363,19 @@ void grenze(int length)
     printf("|\n" RES);
 }
 
-/*---------- Hilfe ----------*/
+/*---------- Help ----------*/
 void help(void)
 {
-    printf( "\nOptionen:\n"
-            "w: hoch\n"
-            "s: runter\n"
-            "a: links\n"
-            "s: rechts\n"
-            "v: show/noshow\n"
-            "q: beenden\n");
+    printf( "\nCommands:\n"
+            "w: move up\n"
+            "s: move down\n"
+            "a: move left\n"
+            "d: move right\n"
+            "v: toggle debug view\n"
+            "q: quit\n");
 }
 
-/*---------- Generierung einer Zufallsposition ----------*/
+/*---------- Generate a Random Position ----------*/
 void gen_rand_pos(int *xl, int *yl, int* boardl[], int bsl, int type)
 {
     int x_rand, y_rand;
@@ -390,7 +390,7 @@ void gen_rand_pos(int *xl, int *yl, int* boardl[], int bsl, int type)
     boardl[y_rand][x_rand] = type;
 }
 
-/*---------- Suche Element in Matrix ----------*/
+/*---------- Search for a Value in the Matrix ----------*/
 int find_element(int* boardl[], int bsl, int value)
 {
     int i, j;
@@ -398,7 +398,7 @@ int find_element(int* boardl[], int bsl, int value)
     for(i=0; i<bsl; i++)
         for(j=0; j<bsl; j++)
             if(boardl[i][j] == value)
-                return 1;                /* Element wurde gefunden */
+                return 1;                /* Value found */
 
     return 0;
 }
@@ -407,21 +407,28 @@ int find_element(int* boardl[], int bsl, int value)
 
 /*-------------------------------------------------------- TODO --------------------------------------------------------//
 
-  ==> Algorithmus zur Erzeugung der zufaelligen Position in eine Funktion verlegen --> get_rand_pos()
-  --> Bei obstacle pruefen, ob Elemente ggf. zu nah bei einander (--> dann neuer Funktionsdurchlauf)
-  --> Algorithmus verbessern --> z.B. erst 1 Zufallsposition erzeugen; falls besetzt naechst rechte Position
-  testen usw. (bessere Kontrolle der Anzahl Durchlaeufe)
-  --> Wie Uebergabe an Funktion und Zufallsposition richtig zurueckgeben?
+  ==> Move the random position generation algorithm into a dedicated function --> get_rand_pos()
 
-  ==> signal handling richtig?
+  --> For obstacles, check whether they are spawned too close to one another
+      (if so, generate a new position)
 
-  ==> W A S D ohne Bestaetigung der Enter-Taste? // oder Pfeiltasten?
+  --> Improve the placement algorithm, e.g. generate one random position first;
+      if it is occupied, check the next position to the right, and so on
+      (better control over the number of iterations)
+
+  --> What is the proper way to pass the generated random position
+      back from the function?
+
+  ==> Proper signal handling?
+
+  ==> Support W A S D movement without requiring the Enter key?
+      // Or use the arrow keys instead?
 
   ==> ncurses???
 
-  ==> Alternative fuer system("clear")        ==>        printf("\033[H" "\033[2J");
+  ==> Alternative to system("clear")
+      ==> printf("\033[H" "\033[2J");
 
 //----------------------------------------------------------------------------------------------------------------------*/
 
 /*----- EOF -----*/
-
