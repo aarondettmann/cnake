@@ -1,20 +1,22 @@
-/******************************************************
- * File:    cnake.c                                   *
- * Date:    16.10.2014 & 27.12.2014 (2026-07-20)      *
- * Author:  Aaron Dettmann                            *
- * Purpose: Cnake - Primitive snake-game written in C *
- ******************************************************/
+/************************************************************
+ * File:    cnake.c                                         *
+ * Date:    2014-10-16 - 27.12.2014-12-27 (2026-07-20)      *
+ * Author:  Aaron Dettmann                                  *
+ * Purpose: Cnake - Primitive ASCII snake game written in C *
+ ************************************************************/
 
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
 /*---------- Version ----------*/
 #define VERSION "0.4.0"
+#define DEFAULT_BOARD_SIZE 6
 
 /*---------- Colors ----------*/
 #define RED "\x1B[31m" /* red */
@@ -37,14 +39,13 @@ int init_terminal(void);
 void restore_terminal(void);
 int read_command(char *);
 void hl(void);
-void grenze(int length);
+void border(int length);
 void help(void);
 int has_adjacent_obstacle(int **, int, int, int);
 int is_spawn_position_valid(int **, int, int, int, int);
 int find_spawn_position(int **, int, int, int *, int *);
 int place_tile(int **, int, int);
 int find_element(int **, int, int);
-void ausgabe(int **, int, char *);
 
 /*---------- Terminal State ----------*/
 static struct termios original_terminal;
@@ -59,6 +60,7 @@ int main(int argc, char *argv[]) {
   /*---------- Variable Declarations ----------*/
   int i, j,   /* Loop variables                                              */
       bs = 0, /* Board size --> side length of the playing field             */
+      discard, /* Discard long board-size input */
       x, y, x_old, y_old, /* Position coordinates */
       exit = 0,     /* Evaluated in the main loop --> Game Over!; Win!; ...   */
       cmd_status,   /* Command read status */
@@ -70,8 +72,12 @@ int main(int argc, char *argv[]) {
       spawn_snack = 0,      /* Respawn snack after tail update */
       spawn_poison = 0,     /* Respawn poison after tail update */
       **board; /* Game board                                                  */
+  long parsed_bs;
 
   char cmd = 'x',     /* Command        */
+      board_size_input[32], /* Board-size prompt input */
+      *endptr,              /* Parsed board-size suffix */
+      *newline,             /* Trailing newline position */
       terra = ' ',    /* ( 0) Empty tile */
       body = '=',     /* (>0) Body       */
       head = '>',     /* (-1) Head       */
@@ -108,10 +114,46 @@ int main(int argc, char *argv[]) {
 
   if (!bs) {
     do {
-      printf("Choose the board size [4-10]: ");
-      if (!scanf(" %d", &bs))
+      printf("Choose the board size [4-10] (default: %d): ",
+             DEFAULT_BOARD_SIZE);
+      if (!fgets(board_size_input, sizeof(board_size_input), stdin))
         return 1;
-    } while (bs < 4 || bs > 10);
+
+      newline = strchr(board_size_input, '\n');
+      if (newline == NULL)
+        while ((discard = getchar()) != '\n' && discard != EOF)
+          ;
+
+      if (board_size_input[0] == '\n') {
+        bs = DEFAULT_BOARD_SIZE;
+        break;
+      }
+
+      errno = 0;
+      parsed_bs = strtol(board_size_input, &endptr, 10);
+
+      if (errno != 0 || endptr == board_size_input) {
+        printf("Error: Enter a number from 4 to 10, or press Enter for %d.\n",
+               DEFAULT_BOARD_SIZE);
+        continue;
+      }
+
+      while (*endptr == ' ' || *endptr == '\t')
+        endptr++;
+
+      if (*endptr != '\n' && *endptr != '\0') {
+        printf("Error: Enter a number from 4 to 10, or press Enter for %d.\n",
+               DEFAULT_BOARD_SIZE);
+        continue;
+      }
+
+      if (parsed_bs < 4 || parsed_bs > 10) {
+        printf("Error: Board size must be between 4 and 10.\n");
+        continue;
+      }
+
+      bs = (int)parsed_bs;
+    } while (!bs);
   }
 
   if ((board = (int **)malloc(bs * sizeof(int *))) == NULL)
@@ -160,7 +202,7 @@ int main(int argc, char *argv[]) {
       break;
 
     /*---------- Draw the Game Board ----------*/
-    grenze(bs);
+    border(bs);
 
     for (i = 0; i < bs; i++) {
       printf(GRN " | ");
@@ -194,7 +236,7 @@ int main(int argc, char *argv[]) {
       printf(RES "\n");
     }
 
-    grenze(bs);
+    border(bs);
 
     /*---------- Display board[][] values - FOR DEBUGGING ONLY! ----------*/
     if (show) {
@@ -467,10 +509,10 @@ int read_command(char *cmd) {
 }
 
 /*---------- Header ----------*/
-void hl(void) { printf(CLEAR "#---------- Cnake %s ----------#\n\n", VERSION); }
+void hl(void) { printf(CLEAR "=========== CNAKE %s ===========\n\n", VERSION); }
 
 /*---------- Draw Outer Board Border ----------*/
-void grenze(int length) {
+void border(int length) {
   int n;
 
   printf(GRN " |");
@@ -570,12 +612,5 @@ int find_element(int *boardl[], int bsl, int value) {
 
   return 0;
 }
-
-/*-------------------------------------------------------- TODO
---------------------------------------------------------//
-
-  ==> ncurses???
-
-//----------------------------------------------------------------------------------------------------------------------*/
 
 /*----- EOF -----*/
