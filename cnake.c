@@ -1,17 +1,20 @@
 /******************************************************
  * File:    cnake.c                                   *
- * Date:    16.10.2014 & 27.12.2014 (2026-07-01)      *
+ * Date:    16.10.2014 & 27.12.2014 (2026-07-20)      *
  * Author:  Aaron Dettmann                            *
  * Purpose: Cnake - Primitive snake-game written in C *
  ******************************************************/
 
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <termios.h>
 #include <time.h>
+#include <unistd.h>
 
 /*---------- Version ----------*/
-#define VERSION "0.3.8"
+#define VERSION "0.4.0"
 
 /*---------- Colors ----------*/
 #define RED "\x1B[31m" /* red */
@@ -30,6 +33,9 @@
 
 /*---------- Function Prototypes ----------*/
 void sig_handler(int signo);
+int init_terminal(void);
+void restore_terminal(void);
+int read_command(char *);
 void hl(void);
 void grenze(int length);
 void help(void);
@@ -40,6 +46,11 @@ int place_tile(int **, int, int);
 int find_element(int **, int, int);
 void ausgabe(int **, int, char *);
 
+/*---------- Terminal State ----------*/
+static struct termios original_terminal;
+static int terminal_initialized = 0;
+static volatile sig_atomic_t interrupted = 0;
+
 /*============================*/
 /*---------- MAIN() ----------*/
 /*============================*/
@@ -49,10 +60,11 @@ int main(int argc, char *argv[]) {
   int i, j,   /* Loop variables                                              */
       bs = 0, /* Board size --> side length of the playing field             */
       x, y, x_old, y_old, /* Position coordinates */
-      exit = 0,   /* Evaluated in the main loop --> Game Over!; Win!; ...   */
-      length = 1, /* Length of the snake */
+      exit = 0,     /* Evaluated in the main loop --> Game Over!; Win!; ...   */
+      cmd_status,   /* Command read status */
+      length = 1,   /* Length of the snake */
       numofobs = 0, /* Number of obstacles   */
-      target_numofobs, /* Desired number of obstacles */
+      target_numofobs,      /* Desired number of obstacles */
       stats[3] = {0, 0, 0}, /* Statistics [moves][snacks eaten][poison eaten] */
       show = 0,             /* Show/Hide debug output             */
       spawn_snack = 0,      /* Respawn snack after tail update */
@@ -66,11 +78,24 @@ int main(int argc, char *argv[]) {
       obstacle = '#', /* (-2) Obstacle   */
       snack = '*',    /* (-3) Snack      */
       poison = '!';   /* (-4) Poison     */
+  struct sigaction action;
 
   x = y = x_old = y_old = 0;
 
   /*---------- Signal Handling ----------*/
-  signal(SIGINT, sig_handler);
+  if (atexit(restore_terminal) != 0) {
+    fprintf(stderr, "Error: Unable to register terminal cleanup.\n");
+    return 4;
+  }
+
+  action.sa_handler = sig_handler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = 0;
+
+  if (sigaction(SIGINT, &action, NULL) == -1) {
+    fprintf(stderr, "Error: Unable to install signal handler.\n");
+    return 4;
+  }
 
   /*---------- Determine Board Size ----------*/
   hl();
@@ -121,11 +146,19 @@ int main(int argc, char *argv[]) {
     return 3;
   }
 
+  if (!init_terminal()) {
+    fprintf(stderr, "Error: Unable to enable direct input mode.\n");
+    return 4;
+  }
+
   /*---------- Start Main Game Loop ----------*/
   hl();
   printf("==> Board: %dx%d\n\n", bs, bs);
 
   while (cmd != 'q') {
+    if (interrupted)
+      break;
+
     /*---------- Draw the Game Board ----------*/
     grenze(bs);
 
@@ -202,27 +235,39 @@ int main(int argc, char *argv[]) {
 
     /*---------- Read Player Command ----------*/
     do {
-      do {
-        printf("\nEnter a command [h]: ");
-        scanf(" %c", &cmd);
-      } while (getchar() != '\n');
+      printf("\nPress a key [?]: ");
+      fflush(stdout);
 
-      if (cmd == 'h') {
+      cmd_status = read_command(&cmd);
+      if (cmd_status == -1) {
+        fprintf(stderr, "\nError: Unable to read a command.\n");
+        return 5;
+      }
+
+      if (cmd_status == 0) {
+        if (interrupted)
+          break;
+
+        cmd = 'q';
+        break;
+      }
+
+      if (cmd == '?') {
         help();
         continue;
-      } else if (cmd == 'w') {
+      } else if (cmd == 'k') {
         hl();
         printf("==> Up!\n\n");
         y -= 1;
         if (y < 0)
           y = bs - 1;
-      } else if (cmd == 's') {
+      } else if (cmd == 'j') {
         hl();
         printf("==> Down!\n\n");
         y += 1;
         if (y > bs - 1)
           y = 0;
-      } else if (cmd == 'a') {
+      } else if (cmd == 'h') {
         hl();
         printf("==> Left!\n\n");
         head = '<';
@@ -230,7 +275,7 @@ int main(int argc, char *argv[]) {
         if (x < 0)
           x = bs - 1;
 
-      } else if (cmd == 'd') {
+      } else if (cmd == 'l') {
         hl();
         printf("==> Right!\n\n");
         head = '>';
@@ -263,6 +308,9 @@ int main(int argc, char *argv[]) {
       break;
 
     } while (1);
+
+    if (interrupted)
+      break;
 
     if (cmd == 'q')
       break;
@@ -334,6 +382,13 @@ int main(int argc, char *argv[]) {
 
   } /* End of main game loop */
 
+  restore_terminal();
+
+  if (interrupted) {
+    printf(RES "\n\n");
+    return 128 + interrupted;
+  }
+
   /*---------- Game Summary ----------*/
   printf("\nMoves:\t\t%4d\n", stats[0]);
   printf("Snacks:\t\t%4d\n", stats[1]);
@@ -349,9 +404,66 @@ int main(int argc, char *argv[]) {
 /*================================*/
 
 /*---------- Signal Handling ----------*/
-void sig_handler(int sigint) {
-  printf(RES "\n\n");
-  exit(sigint);
+void sig_handler(int sigint) { interrupted = sigint; }
+
+/*---------- Enable Direct Terminal Input ----------*/
+int init_terminal(void) {
+  struct termios terminal;
+
+  if (!isatty(STDIN_FILENO))
+    return 1;
+
+  if (tcgetattr(STDIN_FILENO, &original_terminal) == -1)
+    return 0;
+
+  terminal = original_terminal;
+  terminal.c_lflag &= ~(ICANON | ECHO);
+  terminal.c_cc[VMIN] = 1;
+  terminal.c_cc[VTIME] = 0;
+
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) == -1)
+    return 0;
+
+  terminal_initialized = 1;
+  return 1;
+}
+
+/*---------- Restore Terminal Settings ----------*/
+void restore_terminal(void) {
+  if (!terminal_initialized)
+    return;
+
+  tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal);
+  terminal_initialized = 0;
+}
+
+/*---------- Read One Command ----------*/
+int read_command(char *cmd) {
+  int input;
+
+  do {
+    errno = 0;
+    input = getchar();
+
+    if (input == EOF) {
+      if (interrupted)
+        return 0;
+
+      if (ferror(stdin)) {
+        if (errno == EINTR) {
+          clearerr(stdin);
+          continue;
+        }
+
+        return -1;
+      }
+
+      return 0;
+    }
+  } while (input == '\n' || input == '\r');
+
+  *cmd = (char)input;
+  return 1;
 }
 
 /*---------- Header ----------*/
@@ -371,11 +483,13 @@ void grenze(int length) {
 
 /*---------- Help ----------*/
 void help(void) {
-  printf("\nCommands:\n"
-         "w: move up\n"
-         "s: move down\n"
-         "a: move left\n"
-         "d: move right\n"
+  printf("\nKeys (vim-style):\n"
+         "h: move left\n"
+         "j: move down\n"
+         "k: move up\n"
+         "l: move right\n"
+         "?: show help\n"
+         "c: length +5 (cheat)\n"
          "v: toggle debug view\n"
          "q: quit\n");
 }
@@ -457,12 +571,8 @@ int find_element(int *boardl[], int bsl, int value) {
   return 0;
 }
 
-/*-------------------------------------------------------- TODO --------------------------------------------------------//
-
-  ==> Proper signal handling?
-
-  ==> Support W A S D movement without requiring the Enter key?
-      // Or use the arrow keys instead?
+/*-------------------------------------------------------- TODO
+--------------------------------------------------------//
 
   ==> ncurses???
 
