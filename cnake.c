@@ -7,8 +7,8 @@
 
 #include <ctype.h>
 #include <errno.h>
-#include <stdbool.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,7 +97,7 @@ void print_header(void);
 void draw_border(int board_size);
 void draw_game_board(const int *, int, char, char, char, char, char, char,
                      const int[3], int, int);
-void print_game_status_message(enum game_status, char, char, char, char);
+void print_game_status_message(enum game_status, char, char, char);
 void help(void);
 enum board_size_parse_status parse_board_size(const char *, int *);
 bool apply_move_command(int, char, char *, int *, int *, const char **);
@@ -123,27 +123,27 @@ static volatile sig_atomic_t interrupted = 0;
 
 int main(int argc, char *argv[]) {
   /*---------- Variable Declarations ----------*/
-  int i,                    // Loop variables
-      bs = 0,               // Board size --> side length of the playing field
-      discard,              // Discard long board-size input
-      x, y, x_old, y_old,   // Position coordinates
-      length = 1,           // Length of the snake
-      obstacle_count = 0,   // Number of obstacles
+  int i,                     // Loop variables
+      bs = 0,                // Board size --> side length of the playing field
+      discard,               // Discard long board-size input
+      x, y, x_old, y_old,    // Position coordinates
+      length = 1,            // Length of the snake
+      obstacle_count = 0,    // Number of obstacles
       target_obstacle_count, // Desired number of obstacles
-      stats[3] = {0, 0, 0}, // Statistics [moves][snacks eaten][poison eaten]
-      show = 0,             // Show/Hide debug output
-      spawn_snack = 0,      // Respawn snack after tail update
-      spawn_poison = 0;     // Respawn poison after tail update
-  int *board = NULL;        // Game board
-  char cmd = '\0',          // Command
-      board_size_input[32], // Board-size prompt input
-      *newline,             // Trailing newline position
-      terra = ' ',          // Empty tile
-      body = '=',           // Body segment
-      head = '>',           // Head tile
-      obstacle = '#',       // Obstacle tile
-      snack = '*',          // Snack tile
-      poison = '!';         // Poison tile
+      stats[3] = {0, 0, 0},  // Statistics [moves][snacks eaten][poison eaten]
+      show = 0,              // Show/Hide debug output
+      spawn_snack = 0,       // Respawn snack after tail update
+      spawn_poison = 0;      // Respawn poison after tail update
+  int *board = NULL;         // Game board
+  char cmd = '\0',           // Command
+      board_size_input[32],  // Board-size prompt input
+      *newline,              // Trailing newline position
+      terra = ' ',           // Empty tile
+      body = '=',            // Body segment
+      head = '>',            // Head tile
+      obstacle = '#',        // Obstacle tile
+      snack = '*',           // Snack tile
+      poison = '!';          // Poison tile
   struct sigaction action;
   enum board_size_parse_status board_size_status;
   enum command_result command_result;
@@ -249,7 +249,7 @@ int main(int argc, char *argv[]) {
                     stats, length, show);
 
     if (game_status != GAME_RUNNING) {
-      print_game_status_message(game_status, body, head, obstacle, poison);
+      print_game_status_message(game_status, body, obstacle, poison);
       break;
     }
 
@@ -306,7 +306,7 @@ int main(int argc, char *argv[]) {
   /*---------- Game Summary ----------*/
   printf("\nMoves:\t\t%4d\n", stats[0]);
   printf("Snacks:\t\t%4d\n", stats[1]);
-  printf("Poison:\t%4d\n", stats[2]);
+  printf("Poison:\t\t%4d\n", stats[2]);
   printf("Length:\t\t%d/%d+\n\n", length, (bs * bs - obstacle_count - 1));
 
   free(board);
@@ -522,14 +522,14 @@ void draw_game_board(const int *board, int board_size, char terra, char body,
 
 /*---------- Print the Game Status Message ----------*/
 void print_game_status_message(enum game_status game_status, char body,
-                               char head, char obstacle, char poison) {
+                               char obstacle, char poison) {
   if (game_status == GAME_WON) {
     printf("\nYOU WIN!\n");
     return;
   }
 
   if (game_status == GAME_OVER_SNAKE)
-    printf("\nSnake!" RED " %c%c> " RES, body, body, head);
+    printf("\nSnake!" RED " %c%c> " RES, body, body);
   else if (game_status == GAME_OVER_OBSTACLE)
     printf("\nObstacle!" BLU " %c " RES, obstacle);
   else if (game_status == GAME_OVER_POISON)
@@ -758,11 +758,12 @@ enum game_status handle_tile_effect(int tile_value, int *length, int stats[3],
 }
 
 /*---------- Advance the Snake ----------*/
-void advance_snake(int *board, int board_size, int x_pos, int y_pos, int x_previous,
-                   int y_previous, int length) {
+void advance_snake(int *board, int board_size, int x_pos, int y_pos,
+                   int x_previous, int y_previous, int length) {
   int i, j;
 
-  *board_tile_ptr(board, board_size, x_pos, y_pos) = TILE_HEAD; /* Head position */
+  *board_tile_ptr(board, board_size, x_pos, y_pos) =
+      TILE_HEAD; /* Head position */
   *board_tile_ptr(board, board_size, x_previous, y_previous) =
       length; /* Store the snake length at the previous head position */
 

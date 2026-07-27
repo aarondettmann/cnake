@@ -2,12 +2,15 @@
 
 Primitive snake game written in C.
 
-## Compile and Run
+## Build and Run
+
+Requires GCC and Make.
 
 ```bash
-gcc cnake.c -o cnake
+make
 ./cnake
 ```
 
-![Cnake screenshot](cnake_screenshot.png)
+Remove the compiled binary with `make clean`.
 
+![Cnake screenshot](cnake_screenshot.png)
