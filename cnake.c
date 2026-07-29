@@ -1,9 +1,9 @@
-/************************************************************
- * File:    cnake.c                                         *
- * Date:    2014-10-16 - 27.12.2014-12-27 (2026-07-21)      *
- * Author:  Aaron Dettmann                                  *
- * Purpose: Cnake - Primitive ASCII snake game written in C *
- ************************************************************/
+/*****************************************************************
+ * File:    cnake.c                                              *
+ * Date:    2014-10-16 - 2014-12-27 (updated 2026-07-29)         *
+ * Author:  Aaron Dettmann                                       *
+ * Purpose: Cnake - Primitive text-based snake game written in C *
+ *****************************************************************/
 
 #include <ctype.h>
 #include <errno.h>
@@ -18,7 +18,7 @@
 #include <unistd.h>
 
 /*---------- Version ----------*/
-#define VERSION "0.4.1"
+#define VERSION "0.4.2"
 #define DEFAULT_BOARD_SIZE 6
 #define MIN_BOARD_SIZE 4
 #define MAX_BOARD_SIZE 10
@@ -94,7 +94,7 @@ int read_stdin_char(char *, int);
 void discard_escape_sequence(void);
 int read_command(char *);
 void print_header(void);
-void draw_border(int board_size);
+void draw_border(int board_size, bool bottom);
 void draw_game_board(const int *, int, char, char, char, char, char, char,
                      const int[3], int, int);
 void print_game_status_message(enum game_status, char, char, char);
@@ -176,8 +176,14 @@ int main(int argc, char *argv[]) {
     do {
       printf("Choose the board size [%d-%d] (default: %d): ", MIN_BOARD_SIZE,
              MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
-      if (!fgets(board_size_input, sizeof(board_size_input), stdin))
+      if (!fgets(board_size_input, sizeof(board_size_input), stdin)) {
+        if (interrupted) {
+          putchar('\n');
+          return 128 + interrupted;
+        }
+
         return EXIT_INPUT_ERROR;
+      }
 
       newline = strchr(board_size_input, '\n');
       if (newline == NULL)
@@ -451,15 +457,21 @@ void print_header(void) {
 }
 
 /*---------- Draw Outer Board Border ----------*/
-void draw_border(int board_size) {
+/*
+  Alternative pure ASCII border chars:
+  +--+
+  |  |
+  +--+
+*/
+void draw_border(int board_size, bool bottom) {
   int n;
 
-  printf(GRN " |");
+  printf(GRN " %s", bottom ? "└" : "┌");
 
   for (n = 0; n <= 2 * board_size; n++)
-    printf("-");
+    printf("─");
 
-  printf("|\n" RES);
+  printf("%s\n" RES, bottom ? "┘" : "┐");
 }
 
 /*---------- Draw the Game Board ----------*/
@@ -468,10 +480,10 @@ void draw_game_board(const int *board, int board_size, char terra, char body,
                      const int stats[3], int length, int show) {
   int i, j, tile_value;
 
-  draw_border(board_size);
+  draw_border(board_size, false);
 
   for (i = 0; i < board_size; i++) {
-    printf(GRN " | ");
+    printf(GRN " │ ");
 
     for (j = 0; j < board_size; j++) {
       tile_value = board_tile(board, board_size, j, i);
@@ -490,7 +502,7 @@ void draw_game_board(const int *board, int board_size, char terra, char body,
         printf(GRN "%c ", poison);
     }
 
-    printf(GRN "|\t");
+    printf(GRN "│    ");
 
     if (i == 0)
       printf(RED "%c%c>\t" RES "Snake     (%d)", body, body, length);
@@ -504,7 +516,7 @@ void draw_game_board(const int *board, int board_size, char terra, char body,
     printf(RES "\n");
   }
 
-  draw_border(board_size);
+  draw_border(board_size, true);
 
   if (show) {
     printf("\n");
@@ -540,7 +552,7 @@ void print_game_status_message(enum game_status game_status, char body,
 
 /*---------- Help ----------*/
 void help(void) {
-  printf("\nKeys (vim-style):\n"
+  printf("\n\nKeys (vim-style):\n"
          "h: move left\n"
          "j: move down\n"
          "k: move up\n"
