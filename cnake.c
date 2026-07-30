@@ -641,7 +641,7 @@ static void print_help(void) {
          "          " COLOR_YELLOW "k" COLOR_GREEN " ▲" COLOR_RESET
          "                " COLOR_CYAN "│\n"
          "│ " COLOR_RESET
-          "      " COLOR_YELLOW "h" COLOR_GREEN " ◀     ▶ " COLOR_YELLOW "l" COLOR_RESET 
+          "      " COLOR_YELLOW "h" COLOR_GREEN " ◀     ▶ " COLOR_YELLOW "l" COLOR_RESET
           "            " COLOR_CYAN
          "│\n"
          "│ " COLOR_RESET

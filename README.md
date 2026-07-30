@@ -4,9 +4,9 @@
 
 ![Cnake screenshot](docs/cnake-screenshot.svg)
 
-## Build and Run
+## Build, Run, and Install
 
-Requires GCC and Make.
+Requires Make and a C11 compiler on a POSIX-compatible system.
 
 ```bash
 make
@@ -22,6 +22,26 @@ Optionally provide a board size and a seed:
 The seed reproduces the same board and subsequent random tile placements when
 using the same C library implementation. Without `--seed`, Cnake seeds the game
 from the current time as before.
+
+Install to `/usr/local/bin` by default:
+
+```bash
+sudo make install
+```
+
+Set `PREFIX` to install elsewhere without elevated permissions:
+
+```bash
+make install PREFIX="$HOME/.local"
+```
+
+Use the same prefix to uninstall:
+
+```bash
+make uninstall PREFIX="$HOME/.local"
+```
+
+Packagers can stage an installation by setting `DESTDIR`.
 
 Remove the compiled binary with `make clean`.
 

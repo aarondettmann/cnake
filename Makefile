@@ -1,8 +1,11 @@
-CC := gcc
-CPPFLAGS := -D_POSIX_C_SOURCE=200809L
-CFLAGS := -std=c11 -O2 -Wall -Wextra -Wpedantic
+CPPFLAGS += -D_POSIX_C_SOURCE=200809L
+CFLAGS += -std=c11 -O2 -Wall -Wextra -Wpedantic
 
-.PHONY: all clean
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+INSTALL ?= install
+
+.PHONY: all clean install uninstall
 
 all: cnake
 
@@ -11,3 +14,10 @@ cnake: cnake.c
 
 clean:
 	$(RM) cnake
+
+install: cnake
+	$(INSTALL) -d "$(DESTDIR)$(BINDIR)"
+	$(INSTALL) -m 755 cnake "$(DESTDIR)$(BINDIR)/cnake"
+
+uninstall:
+	$(RM) "$(DESTDIR)$(BINDIR)/cnake"
