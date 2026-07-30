@@ -1,12 +1,13 @@
-/*****************************************************************
- * File:    cnake.c                                              *
- * Date:    2014-10-16 - 2014-12-27 (updated 2026-07-29)         *
- * Author:  Aaron Dettmann                                       *
- * Purpose: Cnake - Primitive text-based snake game written in C *
- *****************************************************************/
+/****************************************************************
+ * File:    cnake.c                                             *
+ * Date:    2014-10-16 - 2014-12-27 (updated 2026-07-30)        *
+ * Author:  Aaron Dettmann                                      *
+ * Purpose: Cnake - A simple text-based snake game written in C *
+ ****************************************************************/
 
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,16 +18,18 @@
 #include <time.h>
 #include <unistd.h>
 
-/*---------- Version ----------*/
-#define VERSION "0.4.2"
+/*---------- Configuration and Data Model ----------*/
+
+#define VERSION "0.5.0"
 #define DEFAULT_BOARD_SIZE 6
 #define MIN_BOARD_SIZE 4
 #define MAX_BOARD_SIZE 10
+#define HEADER_INNER_WIDTH 34
 
 enum board_size_parse_status {
   BOARD_SIZE_INVALID = 0,
   BOARD_SIZE_OUT_OF_RANGE,
-  BOARD_SIZE_VALID
+  BOARD_SIZE_VALID,
 };
 
 enum game_status {
@@ -34,14 +37,39 @@ enum game_status {
   GAME_WON,
   GAME_OVER_SNAKE,
   GAME_OVER_OBSTACLE,
-  GAME_OVER_POISON
+  GAME_OVER_POISON,
 };
 
-enum command_result {
-  COMMAND_ERROR = -1,
-  COMMAND_QUIT = 0,
+enum direction {
+  DIRECTION_UP = 0,
+  DIRECTION_DOWN,
+  DIRECTION_LEFT,
+  DIRECTION_RIGHT,
+};
+
+enum player_command {
+  PLAYER_COMMAND_INVALID = 0,
+  PLAYER_COMMAND_MOVE_UP,
+  PLAYER_COMMAND_MOVE_DOWN,
+  PLAYER_COMMAND_MOVE_LEFT,
+  PLAYER_COMMAND_MOVE_RIGHT,
+  PLAYER_COMMAND_HELP,
+  PLAYER_COMMAND_TOGGLE_DEBUG,
+  PLAYER_COMMAND_GROW,
+  PLAYER_COMMAND_QUIT,
+};
+
+enum command_action {
+  COMMAND_REPROMPT = 0,
+  COMMAND_QUIT,
   COMMAND_SKIP_TURN,
-  COMMAND_MOVE
+  COMMAND_MOVE,
+};
+
+enum update_status {
+  UPDATE_OK = 0,
+  UPDATE_SNACK_PLACEMENT_ERROR,
+  UPDATE_POISON_PLACEMENT_ERROR,
 };
 
 enum exit_code {
@@ -50,294 +78,102 @@ enum exit_code {
   EXIT_MEMORY_ERROR = 2,
   EXIT_TILE_PLACEMENT_ERROR = 3,
   EXIT_TERMINAL_ERROR = 4,
-  EXIT_COMMAND_ERROR = 5
+  EXIT_COMMAND_ERROR = 5,
 };
 
+/*
+ * Negative values identify special tiles. Positive values are snake body
+ * countdowns; the segment with value 1 is the tail.
+ */
 enum tile_type {
   TILE_EMPTY = 0,
   TILE_HEAD = -1,
   TILE_OBSTACLE = -2,
   TILE_SNACK = -3,
-  TILE_POISON = -4
+  TILE_POISON = -4,
 };
 
-/*---------- Colors ----------*/
-#define RED "\x1B[31m" /* red */
-#define GRN "\x1B[32m" /* green */
-#define YEL "\x1B[33m" /* yellow */
-#define BLU "\x1B[34m" /* blue */
-#define RES "\033[0m"  /* reset */
+struct position {
+  int x;
+  int y;
+};
 
-/*---------- Escape Codes ----------*/
-/*
-   "\033[H"  // Move cursor to the upper-left corner of the screen
-   "\033[0J" // Clear from the cursor to the end of the screen
-*/
+struct game_stats {
+  int moves;
+  int snacks;
+  int poison;
+};
 
-#define CLEAR "\033[H\033[0J"
+struct game_state {
+  int *board; // Dynamically allocated row-major tile storage
+  int board_size;
+  unsigned int seed;
+  struct position head;
+  int length;
+  int obstacle_count;
+  struct game_stats stats;
+  enum direction direction;
+  enum game_status status;
+  bool show_debug;
+};
 
-static inline int *board_tile_ptr(int *board, int board_size, int x_pos,
-                                  int y_pos) {
-  return &board[y_pos * board_size + x_pos];
-}
+/*---------- Terminal Presentation ----------*/
 
-static inline int board_tile(const int *board, int board_size, int x_pos,
-                             int y_pos) {
-  return board[y_pos * board_size + x_pos];
-}
+#define COLOR_RED "\x1B[91m"
+#define COLOR_GREEN "\x1B[92m"
+#define COLOR_YELLOW "\x1B[93m"
+#define COLOR_BLUE "\x1B[94m"
+#define COLOR_MAGENTA "\x1B[95m"
+#define COLOR_CYAN "\x1B[96m"
+#define STYLE_DIM "\x1B[2m"
+#define COLOR_RESET "\033[0m"
 
-/*---------- Function Prototypes ----------*/
-void sig_handler(int signo);
-bool init_terminal(void);
-void restore_terminal(void);
-int read_stdin_char(char *, int);
-void discard_escape_sequence(void);
-int read_command(char *);
-void print_header(void);
-void draw_border(int board_size, bool bottom);
-void draw_game_board(const int *, int, char, char, char, char, char, char,
-                     const int[3], int, int);
-void print_game_status_message(enum game_status, char, char, char);
-void help(void);
-enum board_size_parse_status parse_board_size(const char *, int *);
-bool apply_move_command(int, char, char *, int *, int *, const char **);
-enum command_result handle_player_command(int, char *, char *, int *, int *,
-                                          int *, int *, int *);
-bool has_adjacent_obstacle(const int *, int, int, int);
-bool is_spawn_position_valid(const int *, int, int, int, enum tile_type);
-bool find_spawn_position(const int *, int, enum tile_type, int *, int *);
-enum game_status handle_tile_effect(int, int *, int[3], int *, int *);
-void advance_snake(int *, int, int, int, int, int, int);
-bool respawn_tile_if_needed(int *, int, int, enum tile_type);
-bool place_tile(int *, int, enum tile_type);
-bool board_contains_value(const int *, int, int);
+#define ERROR_LABEL COLOR_RED " × Error:" COLOR_RESET
+#define WARNING_LABEL COLOR_YELLOW " ! Warning:" COLOR_RESET
+#define COMMAND_PROMPT COLOR_CYAN " ❯ " COLOR_RESET
+#define CLEAR_SCREEN "\033[H\033[0J"
 
-/*---------- Terminal State ----------*/
+static const char *const GLYPH_EMPTY = "·";
+static const char *const GLYPH_BODY = "●";
+static const char *const GLYPH_TAIL = "○";
+static const char *const GLYPH_HEAD_UP = "▲";
+static const char *const GLYPH_HEAD_DOWN = "▼";
+static const char *const GLYPH_HEAD_LEFT = "◀";
+static const char *const GLYPH_HEAD_RIGHT = "▶";
+static const char *const GLYPH_OBSTACLE = "▣";
+static const char *const GLYPH_SNACK = "✦";
+static const char *const GLYPH_POISON = "×";
+
+/*---------- Board and Terminal State ----------*/
+
 static struct termios original_terminal;
-static int terminal_initialized = 0;
+static bool terminal_initialized = false;
 static volatile sig_atomic_t interrupted = 0;
 
-/*============================*/
-/*---------- MAIN() ----------*/
-/*============================*/
+static size_t board_index(const struct game_state *game, int x, int y) {
+  return (size_t)y * (size_t)game->board_size + (size_t)x;
+}
 
-int main(int argc, char *argv[]) {
-  /*---------- Variable Declarations ----------*/
-  int i,                     // Loop variables
-      bs = 0,                // Board size --> side length of the playing field
-      discard,               // Discard long board-size input
-      x, y, x_old, y_old,    // Position coordinates
-      length = 1,            // Length of the snake
-      obstacle_count = 0,    // Number of obstacles
-      target_obstacle_count, // Desired number of obstacles
-      stats[3] = {0, 0, 0},  // Statistics [moves][snacks eaten][poison eaten]
-      show = 0,              // Show/Hide debug output
-      spawn_snack = 0,       // Respawn snack after tail update
-      spawn_poison = 0;      // Respawn poison after tail update
-  int *board = NULL;         // Game board
-  char cmd = '\0',           // Command
-      board_size_input[32],  // Board-size prompt input
-      *newline,              // Trailing newline position
-      terra = ' ',           // Empty tile
-      body = '=',            // Body segment
-      head = '>',            // Head tile
-      obstacle = '#',        // Obstacle tile
-      snack = '*',           // Snack tile
-      poison = '!';          // Poison tile
-  struct sigaction action;
-  enum board_size_parse_status board_size_status;
-  enum command_result command_result;
-  enum game_status game_status = GAME_RUNNING;
+static int board_tile(const struct game_state *game, int x, int y) {
+  return game->board[board_index(game, x, y)];
+}
 
-  x = y = x_old = y_old = 0;
+static void set_board_tile(struct game_state *game, int x, int y, int value) {
+  game->board[board_index(game, x, y)] = value;
+}
 
-  /*---------- Signal Handling ----------*/
-  if (atexit(restore_terminal) != 0) {
-    fprintf(stderr, "Error: Unable to register terminal cleanup.\n");
-    return EXIT_TERMINAL_ERROR;
-  }
+/*---------- Terminal Input ----------*/
 
-  action.sa_handler = sig_handler;
-  sigemptyset(&action.sa_mask);
-  action.sa_flags = 0;
+static void handle_signal(int signal_number) { interrupted = signal_number; }
 
-  if (sigaction(SIGINT, &action, NULL) == -1) {
-    fprintf(stderr, "Error: Unable to install signal handler.\n");
-    return EXIT_TERMINAL_ERROR;
-  }
-
-  /*---------- Determine Board Size ----------*/
-  print_header();
-
-  if (argc > 1 && parse_board_size(argv[1], &bs) != BOARD_SIZE_VALID)
-    bs = 0;
-
-  if (!bs) {
-    do {
-      printf("Choose the board size [%d-%d] (default: %d): ", MIN_BOARD_SIZE,
-             MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
-      if (!fgets(board_size_input, sizeof(board_size_input), stdin)) {
-        if (interrupted) {
-          putchar('\n');
-          return 128 + interrupted;
-        }
-
-        return EXIT_INPUT_ERROR;
-      }
-
-      newline = strchr(board_size_input, '\n');
-      if (newline == NULL)
-        while ((discard = getchar()) != '\n' && discard != EOF)
-          ;
-
-      if (board_size_input[0] == '\n') {
-        bs = DEFAULT_BOARD_SIZE;
-        break;
-      }
-
-      board_size_status = parse_board_size(board_size_input, &bs);
-
-      if (board_size_status == BOARD_SIZE_INVALID) {
-        printf("Error: Enter a number from %d to %d, or press Enter for %d.\n",
-               MIN_BOARD_SIZE, MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
-        continue;
-      }
-
-      if (board_size_status == BOARD_SIZE_OUT_OF_RANGE) {
-        printf("Error: Board size must be between %d and %d.\n", MIN_BOARD_SIZE,
-               MAX_BOARD_SIZE);
-        continue;
-      }
-    } while (!bs);
-  }
-
-  board = (int *)calloc((size_t)bs * (size_t)bs, sizeof(*board));
-  if (board == NULL)
-    return EXIT_MEMORY_ERROR;
-
-  /*---------- Seed rand() ----------*/
-  srand(time(NULL));
-
-  /*---------- Starting Position ----------*/
-  *board_tile_ptr(board, bs, x, y) = TILE_HEAD;
-
-  /*---------- Generate Random Positions ----------*/
-  target_obstacle_count = (int)(((bs * bs) / 10) + 1);
-
-  for (i = 0; i < target_obstacle_count; i++)
-    if (place_tile(board, bs, TILE_OBSTACLE))
-      obstacle_count++;
-    else
-      break;
-
-  if (!place_tile(board, bs, TILE_POISON) ||
-      !place_tile(board, bs, TILE_SNACK)) {
-    fprintf(stderr, "Error: Unable to place all tiles on the board.\n");
-    free(board);
-    return EXIT_TILE_PLACEMENT_ERROR;
-  }
-
-  if (!init_terminal()) {
-    fprintf(stderr, "Error: Unable to enable direct input mode.\n");
-    free(board);
-    return EXIT_TERMINAL_ERROR;
-  }
-
-  /*---------- Start Main Game Loop ----------*/
-  print_header();
-  printf("==> Board: %dx%d\n\n", bs, bs);
-
-  while (1) {
-    if (interrupted)
-      break;
-
-    draw_game_board(board, bs, terra, body, head, obstacle, snack, poison,
-                    stats, length, show);
-
-    if (game_status != GAME_RUNNING) {
-      print_game_status_message(game_status, body, obstacle, poison);
-      break;
-    }
-
-    x_old = x;
-    y_old = y;
-
-    command_result = handle_player_command(bs, &cmd, &head, &x, &y, &length,
-                                           &show, &stats[0]);
-    if (command_result == COMMAND_ERROR) {
-      free(board);
-      return EXIT_COMMAND_ERROR;
-    }
-
-    if (interrupted || command_result == COMMAND_QUIT)
-      break;
-
-    if (command_result == COMMAND_SKIP_TURN)
-      continue;
-
-    game_status = handle_tile_effect(board_tile(board, bs, x, y), &length,
-                                     stats, &spawn_snack, &spawn_poison);
-    if (game_status != GAME_RUNNING)
-      continue;
-
-    advance_snake(board, bs, x, y, x_old, y_old, length);
-
-    if (!respawn_tile_if_needed(board, bs, spawn_snack, TILE_SNACK)) {
-      fprintf(stderr, "Error: Unable to place a snack.\n");
-      free(board);
-      return EXIT_TILE_PLACEMENT_ERROR;
-    }
-
-    if (!respawn_tile_if_needed(board, bs, spawn_poison, TILE_POISON)) {
-      fprintf(stderr, "Error: Unable to place poison.\n");
-      free(board);
-      return EXIT_TILE_PLACEMENT_ERROR;
-    }
-
-    if (!board_contains_value(board, bs, TILE_EMPTY)) {
-      game_status = GAME_WON;
-      continue;
-    }
-
-  } /* End of main game loop */
-
-  restore_terminal();
-
-  if (interrupted) {
-    free(board);
-    printf(RES "\n\n");
-    return 128 + interrupted;
-  }
-
-  /*---------- Game Summary ----------*/
-  printf("\nMoves:\t\t%4d\n", stats[0]);
-  printf("Snacks:\t\t%4d\n", stats[1]);
-  printf("Poison:\t\t%4d\n", stats[2]);
-  printf("Length:\t\t%d/%d+\n\n", length, (bs * bs - obstacle_count - 1));
-
-  free(board);
-  return EXIT_OK;
-
-} /* End of main() */
-
-/*================================*/
-/*---------- Functions -----------*/
-/*================================*/
-
-/*---------- Signal Handling ----------*/
-void sig_handler(int signo) { interrupted = signo; }
-
-/*---------- Enable Direct Terminal Input ----------*/
-bool init_terminal(void) {
-  struct termios terminal;
-
+static bool initialize_terminal(void) {
   if (!isatty(STDIN_FILENO))
     return false;
 
   if (tcgetattr(STDIN_FILENO, &original_terminal) == -1)
     return false;
 
-  terminal = original_terminal;
+  struct termios terminal = original_terminal;
   terminal.c_lflag &= ~(ICANON | ECHO);
   terminal.c_cc[VMIN] = 1;
   terminal.c_cc[VTIME] = 0;
@@ -345,38 +181,39 @@ bool init_terminal(void) {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) == -1)
     return false;
 
-  terminal_initialized = 1;
+  terminal_initialized = true;
   return true;
 }
 
-/*---------- Restore Terminal Settings ----------*/
-void restore_terminal(void) {
+static void restore_terminal(void) {
   if (!terminal_initialized)
     return;
 
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal) == -1)
-    fprintf(stderr, "Warning: Unable to restore terminal settings.\n");
+    fprintf(stderr, WARNING_LABEL " Unable to restore terminal settings.\n");
 
-  terminal_initialized = 0;
+  terminal_initialized = false;
 }
 
-/*---------- Read One Byte from Standard Input ----------*/
-int read_stdin_char(char *cmd, int timeout_ms) {
-  fd_set readfds;
-  struct timeval timeout;
-  ssize_t bytes_read;
-  int ready;
+/*
+ * Read one byte from standard input. A negative timeout blocks indefinitely.
+ * Returns 1 for input, 0 for a timeout/end/interruption, and -1 for an error.
+ */
+static int read_stdin_char(char *input, int timeout_ms) {
+  while (true) {
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    FD_SET(STDIN_FILENO, &read_fds);
 
-  while (1) {
-    FD_ZERO(&readfds);
-    FD_SET(STDIN_FILENO, &readfds);
-
-    if (timeout_ms < 0)
-      ready = select(STDIN_FILENO + 1, &readfds, NULL, NULL, NULL);
-    else {
-      timeout.tv_sec = timeout_ms / 1000;
-      timeout.tv_usec = (timeout_ms % 1000) * 1000;
-      ready = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &timeout);
+    int ready;
+    if (timeout_ms < 0) {
+      ready = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, NULL);
+    } else {
+      struct timeval timeout = {
+          .tv_sec = timeout_ms / 1000,
+          .tv_usec = (timeout_ms % 1000) * 1000,
+      };
+      ready = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, &timeout);
     }
 
     if (ready == 0)
@@ -393,8 +230,7 @@ int read_stdin_char(char *cmd, int timeout_ms) {
       return -1;
     }
 
-    bytes_read = read(STDIN_FILENO, cmd, 1);
-
+    ssize_t bytes_read = read(STDIN_FILENO, input, 1);
     if (bytes_read == 1)
       return 1;
 
@@ -412,12 +248,14 @@ int read_stdin_char(char *cmd, int timeout_ms) {
   }
 }
 
-/*---------- Discard an Unsupported Escape Sequence ----------*/
-void discard_escape_sequence(void) {
+/*
+ * Consume an unsupported terminal escape sequence without delaying normal
+ * single-key commands.
+ */
+static void discard_escape_sequence(void) {
   char input;
-  int status;
+  int status = read_stdin_char(&input, 10);
 
-  status = read_stdin_char(&input, 10);
   if (status != 1)
     return;
 
@@ -433,17 +271,20 @@ void discard_escape_sequence(void) {
   } while (status == 1 && (input < '@' || input > '~'));
 }
 
-/*---------- Read One Command ----------*/
-int read_command(char *cmd) {
+/*
+ * Read the next non-newline command byte. Return value 2 means that an escape
+ * sequence was consumed and the caller should prompt again.
+ */
+static int read_command_char(char *input) {
   int status;
 
   do {
-    status = read_stdin_char(cmd, -1);
+    status = read_stdin_char(input, -1);
     if (status != 1)
       return status;
-  } while (*cmd == '\n' || *cmd == '\r');
+  } while (*input == '\n' || *input == '\r');
 
-  if (*cmd == '\033') {
+  if (*input == '\033') {
     discard_escape_sequence();
     return 2;
   }
@@ -451,283 +292,541 @@ int read_command(char *cmd) {
   return 1;
 }
 
-/*---------- Header ----------*/
-void print_header(void) {
-  printf(CLEAR "=========== CNAKE %s ===========\n\n", VERSION);
+/*---------- Program Input ----------*/
+
+static void print_usage(const char *program_name) {
+  fprintf(stderr, " Usage: %s [board-size] [--seed unsigned-integer]\n",
+          program_name);
 }
 
-/*---------- Draw Outer Board Border ----------*/
-/*
-  Alternative pure ASCII border chars:
-  +--+
-  |  |
-  +--+
-*/
-void draw_border(int board_size, bool bottom) {
-  int n;
+static bool parse_seed(const char *input, unsigned int *seed) {
+  if (*input == '\0' || !isdigit((unsigned char)*input))
+    return false;
 
-  printf(GRN " %s", bottom ? "└" : "┌");
-
-  for (n = 0; n <= 2 * board_size; n++)
-    printf("─");
-
-  printf("%s\n" RES, bottom ? "┘" : "┐");
-}
-
-/*---------- Draw the Game Board ----------*/
-void draw_game_board(const int *board, int board_size, char terra, char body,
-                     char head, char obstacle, char snack, char poison,
-                     const int stats[3], int length, int show) {
-  int i, j, tile_value;
-
-  draw_border(board_size, false);
-
-  for (i = 0; i < board_size; i++) {
-    printf(GRN " │ ");
-
-    for (j = 0; j < board_size; j++) {
-      tile_value = board_tile(board, board_size, j, i);
-
-      if (tile_value > TILE_EMPTY)
-        printf(RED "%c ", body);
-      else if (tile_value == TILE_EMPTY)
-        printf(RES "%c ", terra);
-      else if (tile_value == TILE_HEAD)
-        printf(RED "%c ", head);
-      else if (tile_value == TILE_OBSTACLE)
-        printf(BLU "%c ", obstacle);
-      else if (tile_value == TILE_SNACK)
-        printf(YEL "%c ", snack);
-      else if (tile_value == TILE_POISON)
-        printf(GRN "%c ", poison);
-    }
-
-    printf(GRN "│    ");
-
-    if (i == 0)
-      printf(RED "%c%c>\t" RES "Snake     (%d)", body, body, length);
-    else if (i == 1)
-      printf(YEL "%c  \t" RES "Snack     (%d)", snack, stats[1]);
-    else if (i == 2)
-      printf(GRN "%c  \t" RES "Poison    (%d)", poison, stats[2]);
-    else if (i == 3)
-      printf(BLU "%c  \t" RES "Obstacle", obstacle);
-
-    printf(RES "\n");
-  }
-
-  draw_border(board_size, true);
-
-  if (show) {
-    printf("\n");
-
-    for (i = 0; i < board_size; i++) {
-      printf("|");
-
-      for (j = 0; j < board_size; j++)
-        printf("%2d ", board_tile(board, board_size, j, i));
-
-      printf("|\n");
-    }
-  }
-}
-
-/*---------- Print the Game Status Message ----------*/
-void print_game_status_message(enum game_status game_status, char body,
-                               char obstacle, char poison) {
-  if (game_status == GAME_WON) {
-    printf("\nYOU WIN!\n");
-    return;
-  }
-
-  if (game_status == GAME_OVER_SNAKE)
-    printf("\nSnake!" RED " %c%c> " RES, body, body);
-  else if (game_status == GAME_OVER_OBSTACLE)
-    printf("\nObstacle!" BLU " %c " RES, obstacle);
-  else if (game_status == GAME_OVER_POISON)
-    printf("\nPoison!" GRN " %c " RES, poison);
-
-  printf("~ GAME OVER!\n");
-}
-
-/*---------- Help ----------*/
-void help(void) {
-  printf("\n\nKeys (vim-style):\n"
-         "h: move left\n"
-         "j: move down\n"
-         "k: move up\n"
-         "l: move right\n"
-         "?: show help\n"
-         "c: length +5 (cheat)\n"
-         "v: toggle debug view\n"
-         "q: quit\n");
-}
-
-/*---------- Parse the Board Size ----------*/
-enum board_size_parse_status parse_board_size(const char *input,
-                                              int *board_size) {
-  char *endptr;
-  long parsed_bs;
+  char *end;
 
   errno = 0;
-  parsed_bs = strtol(input, &endptr, 10);
+  unsigned long parsed_seed = strtoul(input, &end, 10);
 
-  if (errno != 0 || endptr == input)
-    return BOARD_SIZE_INVALID;
-
-  while (*endptr != '\0' && isspace((unsigned char)*endptr))
-    endptr++;
-
-  if (*endptr != '\0')
-    return BOARD_SIZE_INVALID;
-
-  if (parsed_bs < MIN_BOARD_SIZE || parsed_bs > MAX_BOARD_SIZE)
-    return BOARD_SIZE_OUT_OF_RANGE;
-
-  *board_size = (int)parsed_bs;
-  return BOARD_SIZE_VALID;
-}
-
-bool apply_move_command(int board_size, char cmd, char *head, int *x, int *y,
-                        const char **direction_label) {
-  int dx = 0;
-  int dy = 0;
-  char next_head = '\0';
-
-  switch (cmd) {
-  case 'k':
-    dy = -1;
-    next_head = '^';
-    *direction_label = "Up";
-    break;
-  case 'j':
-    dy = 1;
-    next_head = 'v';
-    *direction_label = "Down";
-    break;
-  case 'h':
-    dx = -1;
-    next_head = '<';
-    *direction_label = "Left";
-    break;
-  case 'l':
-    dx = 1;
-    next_head = '>';
-    *direction_label = "Right";
-    break;
-  default:
+  if (errno != 0 || *end != '\0' || parsed_seed > UINT_MAX)
     return false;
-  }
 
-  *head = next_head;
-  *x = (*x + dx + board_size) % board_size;
-  *y = (*y + dy + board_size) % board_size;
+  *seed = (unsigned int)parsed_seed;
   return true;
 }
 
-/*---------- Read and Apply One Player Command ----------*/
-enum command_result handle_player_command(int board_size, char *cmd, char *head,
-                                          int *x, int *y, int *length,
-                                          int *show, int *move_count) {
-  int cmd_status;
-  const char *direction_label;
+/*
+ * Remove a trailing seed option from the arguments passed to board-size
+ * handling. This keeps the existing optional positional size and prompt.
+ */
+static int determine_seed(int argc, char *argv[], int *board_argc,
+                          unsigned int *seed) {
+  *board_argc = argc;
+  *seed = (unsigned int)time(NULL);
 
-  do {
-    printf("\nPress a key [?]: ");
-    fflush(stdout);
+  int seed_option = -1;
+  for (int index = 1; index < argc; index++) {
+    if (strcmp(argv[index], "--seed") == 0) {
+      seed_option = index;
+      break;
+    }
+  }
 
-    cmd_status = read_command(cmd);
-    if (cmd_status == -1) {
-      fprintf(stderr, "\nError: Unable to read a command.\n");
-      return COMMAND_ERROR;
+  if (seed_option != -1) {
+    if (seed_option == argc - 1) {
+      fprintf(stderr, ERROR_LABEL " --seed requires an unsigned integer.\n");
+      print_usage(argv[0]);
+      return EXIT_INPUT_ERROR;
     }
 
-    if (cmd_status == 2)
-      continue;
-
-    if (cmd_status == 0)
-      return COMMAND_QUIT;
-
-    if (*cmd == '?') {
-      help();
-      continue;
-    } else if (apply_move_command(board_size, *cmd, head, x, y,
-                                  &direction_label)) {
-      print_header();
-      printf("==> %s!\n\n", direction_label);
-    } else if (*cmd == 'c') { /* CHEAT CODE --> FOR TESTING */
-      print_header();
-      printf("==> Length +5!\n\n");
-      *length += 5;
-      return COMMAND_SKIP_TURN;
-    } else if (*cmd == 'v') {
-      print_header();
-      printf("==> Toggle Debug View!\n\n");
-      *show = !*show;
-      return COMMAND_SKIP_TURN;
-    } else if (*cmd == 'q')
-      return COMMAND_QUIT;
-    else {
-      printf("\nError: Unknown command!\n");
-      continue;
+    if (seed_option != argc - 2 || seed_option > 2) {
+      // clang-format off
+      fprintf(stderr, ERROR_LABEL " --seed must appear once at the end of the command.\n");
+      // clang-format on
+      print_usage(argv[0]);
+      return EXIT_INPUT_ERROR;
     }
 
-    *move_count += 1;
-    return COMMAND_MOVE;
+    if (!parse_seed(argv[seed_option + 1], seed)) {
+      fprintf(stderr,
+              ERROR_LABEL " Seed must be a decimal integer from 0 to %u.\n",
+              UINT_MAX);
+      return EXIT_INPUT_ERROR;
+    }
 
-  } while (1);
+    *board_argc = seed_option;
+  }
+
+  if (*board_argc > 2) {
+    fprintf(stderr, ERROR_LABEL " Unexpected command-line argument.\n");
+    print_usage(argv[0]);
+    return EXIT_INPUT_ERROR;
+  }
+
+  if (*board_argc == 2 && strncmp(argv[1], "--", 2) == 0) {
+    fprintf(stderr, ERROR_LABEL " Unknown option: %s\n", argv[1]);
+    print_usage(argv[0]);
+    return EXIT_INPUT_ERROR;
+  }
+
+  return EXIT_OK;
 }
 
-/*---------- Check Whether an Obstacle Would Spawn Too Close ----------*/
-bool has_adjacent_obstacle(const int *board, int board_size, int x_pos,
-                           int y_pos) {
-  int x_check, y_check;
+static enum board_size_parse_status parse_board_size(const char *input,
+                                                     int *board_size) {
+  char *end;
 
-  for (y_check = y_pos - 1; y_check <= y_pos + 1; y_check++)
-    for (x_check = x_pos - 1; x_check <= x_pos + 1; x_check++) {
-      if (y_check < 0 || y_check >= board_size || x_check < 0 ||
-          x_check >= board_size)
+  errno = 0;
+  long parsed_size = strtol(input, &end, 10);
+
+  if (errno != 0 || end == input)
+    return BOARD_SIZE_INVALID;
+
+  while (*end != '\0' && isspace((unsigned char)*end))
+    end++;
+
+  if (*end != '\0')
+    return BOARD_SIZE_INVALID;
+
+  if (parsed_size < MIN_BOARD_SIZE || parsed_size > MAX_BOARD_SIZE)
+    return BOARD_SIZE_OUT_OF_RANGE;
+
+  *board_size = (int)parsed_size;
+  return BOARD_SIZE_VALID;
+}
+
+/*
+ * Use a valid command-line size when supplied; otherwise prompt until the
+ * player enters a valid size or accepts the default.
+ */
+static int determine_board_size(int argc, char *argv[], int *board_size) {
+  if (argc > 1 && parse_board_size(argv[1], board_size) == BOARD_SIZE_VALID)
+    return EXIT_OK;
+
+  while (true) {
+    printf(COMMAND_PROMPT "Board size [%d-%d] " STYLE_DIM
+                          "(default %d)" COLOR_RESET ": ",
+           MIN_BOARD_SIZE, MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
+    fflush(stdout);
+
+    char input[32];
+    if (!fgets(input, sizeof(input), stdin)) {
+      if (interrupted) {
+        putchar('\n');
+        return 128 + interrupted;
+      }
+
+      return EXIT_INPUT_ERROR;
+    }
+
+    if (strchr(input, '\n') == NULL) {
+      int discarded;
+      while ((discarded = getchar()) != '\n' && discarded != EOF)
+        ;
+    }
+
+    if (input[0] == '\n') {
+      *board_size = DEFAULT_BOARD_SIZE;
+      return EXIT_OK;
+    }
+
+    enum board_size_parse_status status = parse_board_size(input, board_size);
+
+    if (status == BOARD_SIZE_VALID)
+      return EXIT_OK;
+
+    if (status == BOARD_SIZE_INVALID) {
+      printf(ERROR_LABEL
+             " Enter a number from %d to %d, or press Enter for %d.\n",
+             MIN_BOARD_SIZE, MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
+    } else {
+      printf(ERROR_LABEL " Board size must be between %d and %d.\n",
+             MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+    }
+  }
+}
+
+/*---------- Rendering ----------*/
+
+static const char *head_glyph(enum direction direction) {
+  switch (direction) {
+  case DIRECTION_UP:
+    return GLYPH_HEAD_UP;
+  case DIRECTION_DOWN:
+    return GLYPH_HEAD_DOWN;
+  case DIRECTION_LEFT:
+    return GLYPH_HEAD_LEFT;
+  case DIRECTION_RIGHT:
+    return GLYPH_HEAD_RIGHT;
+  }
+
+  return GLYPH_HEAD_RIGHT;
+}
+
+static void print_header(unsigned int seed) {
+  const char *const snake[] = {GLYPH_BODY, GLYPH_BODY, GLYPH_HEAD_RIGHT};
+  char seed_text[sizeof(seed) * 3 + 3];
+  int seed_width =
+      snprintf(seed_text, sizeof(seed_text), "%u", (unsigned int)seed);
+  int title_width =
+      (int)(sizeof(snake) / sizeof(*snake) + sizeof("  CNAKE () ") - 1) +
+      seed_width;
+  int fill_width = HEADER_INNER_WIDTH - title_width;
+  int left_fill = fill_width / 2;
+  int right_fill = fill_width - left_fill;
+
+  printf(CLEAR_SCREEN COLOR_CYAN " ╭");
+  for (int count = 0; count < left_fill; count++)
+    printf("─");
+
+  printf(" " COLOR_GREEN);
+  for (size_t index = 0; index < sizeof(snake) / sizeof(*snake); index++)
+    printf("%s", snake[index]);
+
+  printf(" CNAKE " STYLE_DIM "(%s)" COLOR_RESET COLOR_CYAN " ", seed_text);
+
+  for (int count = 0; count < right_fill; count++)
+    printf("─");
+
+  printf("╮\n ╰");
+  for (int count = 0; count < HEADER_INNER_WIDTH; count++)
+    printf("─");
+
+  printf("╯\n\n" COLOR_RESET);
+}
+
+static void draw_border(int board_size, bool bottom) {
+  printf(STYLE_DIM COLOR_CYAN " %s", bottom ? "╰" : "╭");
+
+  for (int column = 0; column <= 2 * board_size; column++)
+    printf("─");
+
+  printf("%s" COLOR_RESET, bottom ? "╯" : "╮");
+}
+
+static void print_tile(int tile, enum direction direction) {
+  if (tile > TILE_EMPTY) {
+    printf(COLOR_GREEN "%s " COLOR_RESET, tile == 1 ? GLYPH_TAIL : GLYPH_BODY);
+    return;
+  }
+
+  switch (tile) {
+  case TILE_EMPTY:
+    printf(STYLE_DIM "%s " COLOR_RESET, GLYPH_EMPTY);
+    break;
+  case TILE_HEAD:
+    printf(COLOR_GREEN "%s " COLOR_RESET, head_glyph(direction));
+    break;
+  case TILE_OBSTACLE:
+    printf(COLOR_BLUE "%s " COLOR_RESET, GLYPH_OBSTACLE);
+    break;
+  case TILE_SNACK:
+    printf(COLOR_YELLOW "%s " COLOR_RESET, GLYPH_SNACK);
+    break;
+  case TILE_POISON:
+    printf(COLOR_MAGENTA "%s " COLOR_RESET, GLYPH_POISON);
+    break;
+  }
+}
+
+static void print_status_row(const struct game_state *game, int row) {
+  printf("   " STYLE_DIM COLOR_CYAN "│" COLOR_RESET);
+
+  switch (row) {
+  case 0:
+    printf(" " COLOR_GREEN "%s%s%s" COLOR_RESET " Snake      %3d ", GLYPH_BODY,
+           GLYPH_BODY, GLYPH_HEAD_RIGHT, game->length);
+    break;
+  case 1:
+    printf(" " COLOR_YELLOW "%s" COLOR_RESET "   Snack      %3d ", GLYPH_SNACK,
+           game->stats.snacks);
+    break;
+  case 2:
+    printf(" " COLOR_MAGENTA "%s" COLOR_RESET "   Poison     %3d ",
+           GLYPH_POISON, game->stats.poison);
+    break;
+  case 3:
+    printf(" " COLOR_BLUE "%s" COLOR_RESET "   Obstacle       ",
+           GLYPH_OBSTACLE);
+    break;
+  default:
+    printf("%20s", ""); // Preserve box width for empty lines
+    break;
+  }
+
+  printf(STYLE_DIM COLOR_CYAN "│\n" COLOR_RESET);
+}
+
+/*
+ * Draw the board and fixed-width status panel side by side, followed by the
+ * optional numeric board representation used for debugging.
+ */
+static void draw_game_board(const struct game_state *game) {
+  const char *title_fill = game->board_size < 10 ? "────" : "──";
+
+  draw_border(game->board_size, false);
+  printf("   " STYLE_DIM COLOR_CYAN "╭── STATUS · %d×%d %s╮\n" COLOR_RESET,
+         game->board_size, game->board_size, title_fill);
+
+  for (int y = 0; y < game->board_size; y++) {
+    printf(STYLE_DIM COLOR_CYAN " │ " COLOR_RESET);
+
+    for (int x = 0; x < game->board_size; x++)
+      print_tile(board_tile(game, x, y), game->direction);
+
+    printf(STYLE_DIM COLOR_CYAN "│" COLOR_RESET);
+    print_status_row(game, y);
+  }
+
+  draw_border(game->board_size, true);
+  printf("   " STYLE_DIM COLOR_CYAN "╰────────────────────╯\n" COLOR_RESET);
+
+  if (!game->show_debug)
+    return;
+
+  printf("\n");
+  for (int y = 0; y < game->board_size; y++) {
+    printf("|");
+
+    for (int x = 0; x < game->board_size; x++)
+      printf("%2d ", board_tile(game, x, y));
+
+    printf("|\n");
+  }
+}
+
+static void print_game_status_message(enum game_status status) {
+  switch (status) {
+  case GAME_WON:
+    printf(COLOR_GREEN "\n ✦ YOU WIN! ✦\n" COLOR_RESET);
+    return;
+  case GAME_OVER_SNAKE:
+    printf("\n Snake!" COLOR_GREEN " %s%s%s " COLOR_RESET, GLYPH_BODY,
+           GLYPH_BODY, GLYPH_HEAD_RIGHT);
+    break;
+  case GAME_OVER_OBSTACLE:
+    printf("\n Obstacle!" COLOR_BLUE " %s " COLOR_RESET, GLYPH_OBSTACLE);
+    break;
+  case GAME_OVER_POISON:
+    printf("\n Poison!" COLOR_MAGENTA " %s " COLOR_RESET, GLYPH_POISON);
+    break;
+  case GAME_RUNNING:
+    return;
+  }
+
+  printf(COLOR_RED "— GAME OVER! —\n" COLOR_RESET);
+}
+
+static void print_game_summary(const struct game_state *game) {
+  int capacity = game->board_size * game->board_size - game->obstacle_count - 1;
+
+  // clang-format off
+  printf("\n" COLOR_CYAN
+         " ╭────── SCORE ───────╮\n"
+         " │ " COLOR_RESET "%-14s%4d " COLOR_CYAN "│\n"
+         " │ " COLOR_RESET "%-14s%4d " COLOR_CYAN "│\n"
+         " │ " COLOR_RESET "%-14s%4d " COLOR_CYAN "│\n"
+         " │ " COLOR_RESET "%-10s%3d/%-3d+ " COLOR_CYAN "│\n"
+         " ╰────────────────────╯\n\n" COLOR_RESET,
+         "Moves", game->stats.moves, "Snacks", game->stats.snacks, "Poison",
+         game->stats.poison, "Length", game->length, capacity);
+  // clang-format on
+}
+
+static void print_help(void) {
+  // clang-format off
+  printf("\n\n" COLOR_CYAN
+         "╭────────── CONTROLS ──────────╮\n"
+         "│ " COLOR_RESET
+         "          " COLOR_YELLOW "k" COLOR_GREEN " ▲" COLOR_RESET
+         "                " COLOR_CYAN "│\n"
+         "│ " COLOR_RESET
+          "      " COLOR_YELLOW "h" COLOR_GREEN " ◀     ▶ " COLOR_YELLOW "l" COLOR_RESET
+          "            " COLOR_CYAN
+         "│\n"
+         "│ " COLOR_RESET
+          "          " COLOR_YELLOW "j" COLOR_GREEN " ▼" COLOR_RESET
+          "                " COLOR_CYAN "│\n"
+         "├──────────────────────────────┤\n"
+         "│ " COLOR_YELLOW "%-2s" COLOR_RESET "%-27s" COLOR_CYAN "│\n"
+         "│ " COLOR_YELLOW "%-2s" COLOR_RESET "%-27s" COLOR_CYAN "│\n"
+         "│ " COLOR_YELLOW "%-2s" COLOR_RESET "%-27s" COLOR_CYAN "│\n"
+         "│ " COLOR_YELLOW "%-2s" COLOR_RESET "%-27s" COLOR_CYAN "│\n"
+         "╰──────────────────────────────╯\n"
+         COLOR_RESET,
+         "?", "Show help",
+         "v", "Toggle debug view",
+         "c", "Add five segments",
+         "q", "Quit"
+  );
+  // clang-format on
+}
+
+/*---------- Command Handling ----------*/
+
+static enum player_command parse_player_command(char input) {
+  switch (input) {
+  case 'k':
+    return PLAYER_COMMAND_MOVE_UP;
+  case 'j':
+    return PLAYER_COMMAND_MOVE_DOWN;
+  case 'h':
+    return PLAYER_COMMAND_MOVE_LEFT;
+  case 'l':
+    return PLAYER_COMMAND_MOVE_RIGHT;
+  case '?':
+    return PLAYER_COMMAND_HELP;
+  case 'v':
+    return PLAYER_COMMAND_TOGGLE_DEBUG;
+  case 'c':
+    return PLAYER_COMMAND_GROW;
+  case 'q':
+    return PLAYER_COMMAND_QUIT;
+  default:
+    return PLAYER_COMMAND_INVALID;
+  }
+}
+
+/*
+ * Display one-shot feedback, prompt for a command, and translate a successfully
+ * read byte into a semantic player command.
+ */
+static int prompt_for_command(enum player_command *command,
+                              const char **feedback) {
+  printf("\n");
+
+  if (*feedback != NULL) {
+    printf("%s   ", *feedback);
+    *feedback = NULL;
+  }
+
+  printf(COMMAND_PROMPT "Command " STYLE_DIM "[?]" COLOR_RESET ": ");
+  fflush(stdout);
+
+  char input;
+  int status = read_command_char(&input);
+
+  if (status == 1)
+    *command = parse_player_command(input);
+
+  return status;
+}
+
+static void move_head(struct game_state *game, enum direction direction) {
+  int delta_x = 0;
+  int delta_y = 0;
+
+  switch (direction) {
+  case DIRECTION_UP:
+    delta_y = -1;
+    break;
+  case DIRECTION_DOWN:
+    delta_y = 1;
+    break;
+  case DIRECTION_LEFT:
+    delta_x = -1;
+    break;
+  case DIRECTION_RIGHT:
+    delta_x = 1;
+    break;
+  }
+
+  game->direction = direction;
+  game->head.x = (game->head.x + delta_x + game->board_size) % game->board_size;
+  game->head.y = (game->head.y + delta_y + game->board_size) % game->board_size;
+}
+
+/*
+ * Apply immediate command effects and tell the main loop whether to reprompt,
+ * redraw without advancing, quit, or update the game after movement.
+ */
+static enum command_action apply_player_command(struct game_state *game,
+                                                enum player_command command,
+                                                const char **feedback) {
+  switch (command) {
+  case PLAYER_COMMAND_MOVE_UP:
+    move_head(game, DIRECTION_UP);
+    break;
+  case PLAYER_COMMAND_MOVE_DOWN:
+    move_head(game, DIRECTION_DOWN);
+    break;
+  case PLAYER_COMMAND_MOVE_LEFT:
+    move_head(game, DIRECTION_LEFT);
+    break;
+  case PLAYER_COMMAND_MOVE_RIGHT:
+    move_head(game, DIRECTION_RIGHT);
+    break;
+  case PLAYER_COMMAND_HELP:
+    print_help();
+    return COMMAND_REPROMPT;
+  case PLAYER_COMMAND_TOGGLE_DEBUG:
+    game->show_debug = !game->show_debug;
+    // clang-format off
+    *feedback = game->show_debug ? COLOR_CYAN " ◆ " COLOR_RESET "Debug view on"
+                                 : COLOR_CYAN " ◆ " COLOR_RESET "Debug view off";
+    // clang-format on
+    return COMMAND_SKIP_TURN;
+  case PLAYER_COMMAND_GROW:
+    game->length += 5;
+    *feedback = COLOR_YELLOW " ! " COLOR_RESET "Length +5";
+    return COMMAND_SKIP_TURN;
+  case PLAYER_COMMAND_QUIT:
+    return COMMAND_QUIT;
+  case PLAYER_COMMAND_INVALID:
+    printf("\n" ERROR_LABEL " Unknown command.\n");
+    return COMMAND_REPROMPT;
+  }
+
+  game->stats.moves++;
+  return COMMAND_MOVE;
+}
+
+/*---------- Tile Placement ----------*/
+
+static bool has_adjacent_obstacle(const struct game_state *game, int x, int y) {
+  for (int nearby_y = y - 1; nearby_y <= y + 1; nearby_y++) {
+    for (int nearby_x = x - 1; nearby_x <= x + 1; nearby_x++) {
+      if (nearby_y < 0 || nearby_y >= game->board_size || nearby_x < 0 ||
+          nearby_x >= game->board_size)
         continue;
 
-      if (y_check == y_pos && x_check == x_pos)
+      if (nearby_x == x && nearby_y == y)
         continue;
 
-      if (board_tile(board, board_size, x_check, y_check) == TILE_OBSTACLE)
+      if (board_tile(game, nearby_x, nearby_y) == TILE_OBSTACLE)
         return true;
     }
+  }
 
   return false;
 }
 
-/*---------- Check Whether a Spawn Position Is Valid ----------*/
-bool is_spawn_position_valid(const int *board, int board_size, int x_pos,
-                             int y_pos, enum tile_type type) {
-  if (board_tile(board, board_size, x_pos, y_pos) != TILE_EMPTY)
+static bool is_spawn_position_valid(const struct game_state *game, int x, int y,
+                                    enum tile_type type) {
+  if (board_tile(game, x, y) != TILE_EMPTY)
     return false;
 
-  if (type == TILE_OBSTACLE &&
-      has_adjacent_obstacle(board, board_size, x_pos, y_pos))
-    return false;
-
-  return true;
+  return type != TILE_OBSTACLE || !has_adjacent_obstacle(game, x, y);
 }
 
-/*---------- Find a Valid Position for a Tile ----------*/
-bool find_spawn_position(const int *board, int board_size, enum tile_type type,
-                         int *x_out, int *y_out) {
-  int i, index, total, x_pos, y_pos, start;
+/*
+ * Start at a random tile, then scan the entire board. This preserves random
+ * placement while guaranteeing termination when few empty tiles remain.
+ */
+static bool find_spawn_position(const struct game_state *game,
+                                enum tile_type type,
+                                struct position *position) {
+  int tile_count = game->board_size * game->board_size;
+  int start = rand() % tile_count;
 
-  total = board_size * board_size;
-  start = rand() % total;
+  for (int offset = 0; offset < tile_count; offset++) {
+    int index = (start + offset) % tile_count;
+    int x = index % game->board_size;
+    int y = index / game->board_size;
 
-  for (i = 0; i < total; i++) {
-    index = (start + i) % total;
-    y_pos = index / board_size;
-    x_pos = index % board_size;
-
-    if (is_spawn_position_valid(board, board_size, x_pos, y_pos, type)) {
-      *x_out = x_pos;
-      *y_out = y_pos;
+    if (is_spawn_position_valid(game, x, y, type)) {
+      position->x = x;
+      position->y = y;
       return true;
     }
   }
@@ -735,85 +834,263 @@ bool find_spawn_position(const int *board, int board_size, enum tile_type type,
   return false;
 }
 
-/*---------- Apply the Current Tile Effect ----------*/
-enum game_status handle_tile_effect(int tile_value, int *length, int stats[3],
-                                    int *spawn_snack, int *spawn_poison) {
-  *spawn_snack = 0;
-  *spawn_poison = 0;
+static bool place_tile(struct game_state *game, enum tile_type type) {
+  struct position position;
 
-  if (tile_value > TILE_EMPTY)
-    return GAME_OVER_SNAKE;
-
-  if (tile_value == TILE_OBSTACLE)
-    return GAME_OVER_OBSTACLE;
-
-  if (tile_value == TILE_SNACK) {
-    *length += 1;
-    stats[1] += 1; /* +1 snack */
-    *spawn_snack = 1;
-    return GAME_RUNNING;
-  }
-
-  if (tile_value == TILE_POISON) {
-    stats[2] += 1; /* +1 poison */
-
-    if (*length > 1) {
-      *length -= 1;
-      *spawn_poison = 1;
-      return GAME_RUNNING;
-    }
-
-    return GAME_OVER_POISON;
-  }
-
-  return GAME_RUNNING;
-}
-
-/*---------- Advance the Snake ----------*/
-void advance_snake(int *board, int board_size, int x_pos, int y_pos,
-                   int x_previous, int y_previous, int length) {
-  int i, j;
-
-  *board_tile_ptr(board, board_size, x_pos, y_pos) =
-      TILE_HEAD; /* Head position */
-  *board_tile_ptr(board, board_size, x_previous, y_previous) =
-      length; /* Store the snake length at the previous head position */
-
-  for (i = 0; i < board_size; i++)
-    for (j = 0; j < board_size; j++)
-      if (board_tile(board, board_size, j, i) > TILE_EMPTY)
-        /* All values >0 are snake body segments */
-        *board_tile_ptr(board, board_size, j, i) -= 1;
-}
-
-/*---------- Respawn a Consumed Tile ----------*/
-bool respawn_tile_if_needed(int *board, int board_size, int should_respawn,
-                            enum tile_type type) {
-  return !should_respawn || place_tile(board, board_size, type) ||
-         !board_contains_value(board, board_size, TILE_EMPTY);
-}
-
-/*---------- Place a Tile on the Board ----------*/
-bool place_tile(int *board, int board_size, enum tile_type type) {
-  int x_pos, y_pos;
-
-  if (!find_spawn_position(board, board_size, type, &x_pos, &y_pos))
+  if (!find_spawn_position(game, type, &position))
     return false;
 
-  *board_tile_ptr(board, board_size, x_pos, y_pos) = type;
+  set_board_tile(game, position.x, position.y, type);
   return true;
 }
 
-/*---------- Search for a Value in the Matrix ----------*/
-bool board_contains_value(const int *board, int board_size, int value) {
-  int i, j;
+static bool initialize_board(struct game_state *game) {
+  set_board_tile(game, game->head.x, game->head.y, TILE_HEAD);
 
-  for (i = 0; i < board_size; i++)
-    for (j = 0; j < board_size; j++)
-      if (board_tile(board, board_size, j, i) == value)
-        return true; /* Value found */
+  int target_obstacle_count = game->board_size * game->board_size / 10 + 1;
+
+  for (int count = 0; count < target_obstacle_count; count++) {
+    if (!place_tile(game, TILE_OBSTACLE))
+      break;
+
+    game->obstacle_count++;
+  }
+
+  return place_tile(game, TILE_POISON) && place_tile(game, TILE_SNACK);
+}
+
+/*---------- Snake and Game Updates ----------*/
+
+static bool board_contains_value(const struct game_state *game, int value) {
+  int tile_count = game->board_size * game->board_size;
+
+  for (int index = 0; index < tile_count; index++) {
+    if (game->board[index] == value)
+      return true;
+  }
 
   return false;
 }
 
-/*----- EOF -----*/
+/*
+ * Store the current length at the old head, then decrement every positive
+ * board value. The countdown naturally removes the tail at zero.
+ */
+static void advance_snake(struct game_state *game,
+                          struct position previous_head) {
+  set_board_tile(game, game->head.x, game->head.y, TILE_HEAD);
+  set_board_tile(game, previous_head.x, previous_head.y, game->length);
+
+  int tile_count = game->board_size * game->board_size;
+  for (int index = 0; index < tile_count; index++) {
+    if (game->board[index] > TILE_EMPTY)
+      game->board[index]--;
+  }
+}
+
+/*
+ * A failed respawn is acceptable only when no empty tile remains; that state
+ * is handled as a win after the update.
+ */
+static bool respawn_tile_if_needed(struct game_state *game, bool should_respawn,
+                                   enum tile_type type) {
+  if (!should_respawn)
+    return true;
+
+  if (place_tile(game, type))
+    return true;
+
+  return !board_contains_value(game, TILE_EMPTY);
+}
+
+/*
+ * Resolve the destination tile, advance the snake, respawn consumed items,
+ * and detect a full-board win.
+ */
+static enum update_status update_game(struct game_state *game,
+                                      struct position previous_head) {
+  int tile = board_tile(game, game->head.x, game->head.y);
+  bool spawn_snack = false;
+  bool spawn_poison = false;
+
+  if (tile > TILE_EMPTY) {
+    game->status = GAME_OVER_SNAKE;
+  } else {
+    switch (tile) {
+    case TILE_OBSTACLE:
+      game->status = GAME_OVER_OBSTACLE;
+      break;
+    case TILE_SNACK:
+      game->length++;
+      game->stats.snacks++;
+      spawn_snack = true;
+      break;
+    case TILE_POISON:
+      game->stats.poison++;
+
+      if (game->length == 1) {
+        game->status = GAME_OVER_POISON;
+      } else {
+        game->length--;
+        spawn_poison = true;
+      }
+      break;
+    case TILE_EMPTY:
+    case TILE_HEAD:
+      break;
+    }
+  }
+
+  if (game->status != GAME_RUNNING)
+    return UPDATE_OK;
+
+  advance_snake(game, previous_head);
+
+  if (!respawn_tile_if_needed(game, spawn_snack, TILE_SNACK))
+    return UPDATE_SNACK_PLACEMENT_ERROR;
+
+  if (!respawn_tile_if_needed(game, spawn_poison, TILE_POISON))
+    return UPDATE_POISON_PLACEMENT_ERROR;
+
+  if (!board_contains_value(game, TILE_EMPTY))
+    game->status = GAME_WON;
+
+  return UPDATE_OK;
+}
+
+/*---------- Program Entry Point ----------*/
+
+int main(int argc, char *argv[]) {
+  struct game_state game = {
+      .board = NULL,
+      .board_size = 0,
+      .seed = 0,
+      .head = {0, 0},
+      .length = 1,
+      .obstacle_count = 0,
+      .stats = {0, 0, 0},
+      .direction = DIRECTION_RIGHT,
+      .status = GAME_RUNNING,
+      .show_debug = false,
+  };
+
+  if (atexit(restore_terminal) != 0) {
+    fprintf(stderr, ERROR_LABEL " Unable to register terminal cleanup.\n");
+    return EXIT_TERMINAL_ERROR;
+  }
+
+  struct sigaction action = {0};
+  action.sa_handler = handle_signal;
+  sigemptyset(&action.sa_mask);
+
+  if (sigaction(SIGINT, &action, NULL) == -1) {
+    fprintf(stderr, ERROR_LABEL " Unable to install signal handler.\n");
+    return EXIT_TERMINAL_ERROR;
+  }
+
+  int board_argc;
+  int exit_status = determine_seed(argc, argv, &board_argc, &game.seed);
+  if (exit_status != EXIT_OK)
+    return exit_status;
+
+  print_header(game.seed);
+
+  exit_status = determine_board_size(board_argc, argv, &game.board_size);
+  if (exit_status != EXIT_OK)
+    return exit_status;
+
+  game.board = calloc((size_t)game.board_size * (size_t)game.board_size,
+                      sizeof(*game.board));
+  if (game.board == NULL) {
+    fprintf(stderr, ERROR_LABEL " Unable to allocate the game board.\n");
+    return EXIT_MEMORY_ERROR;
+  }
+
+  srand(game.seed);
+
+  if (!initialize_board(&game)) {
+    fprintf(stderr, ERROR_LABEL " Unable to place all tiles on the board.\n");
+    exit_status = EXIT_TILE_PLACEMENT_ERROR;
+    goto cleanup;
+  }
+
+  if (!initialize_terminal()) {
+    fprintf(stderr, ERROR_LABEL " Unable to enable direct input mode.\n");
+    exit_status = EXIT_TERMINAL_ERROR;
+    goto cleanup;
+  }
+
+  const char *feedback = NULL;
+
+  /* Each turn starts from a complete render of the current state. */
+  while (!interrupted) {
+    print_header(game.seed);
+    draw_game_board(&game);
+
+    if (game.status != GAME_RUNNING) {
+      print_game_status_message(game.status);
+      break;
+    }
+
+    enum command_action action_result = COMMAND_REPROMPT;
+    struct position previous_head = game.head;
+
+    /* Help, invalid input, and escape sequences do not advance the game. */
+    while (action_result == COMMAND_REPROMPT) {
+      enum player_command command = PLAYER_COMMAND_INVALID;
+      int input_status = prompt_for_command(&command, &feedback);
+
+      if (input_status == -1) {
+        fprintf(stderr, "\n" ERROR_LABEL " Unable to read a command.\n");
+        exit_status = EXIT_COMMAND_ERROR;
+        goto cleanup;
+      }
+
+      if (input_status == 0) {
+        action_result = COMMAND_QUIT;
+        break;
+      }
+
+      if (input_status == 2)
+        continue;
+
+      previous_head = game.head;
+      action_result = apply_player_command(&game, command, &feedback);
+    }
+
+    if (action_result == COMMAND_QUIT)
+      break;
+
+    if (action_result == COMMAND_SKIP_TURN)
+      continue;
+
+    enum update_status update_result = update_game(&game, previous_head);
+    if (update_result == UPDATE_SNACK_PLACEMENT_ERROR) {
+      fprintf(stderr, ERROR_LABEL " Unable to place a snack.\n");
+      exit_status = EXIT_TILE_PLACEMENT_ERROR;
+      goto cleanup;
+    }
+
+    if (update_result == UPDATE_POISON_PLACEMENT_ERROR) {
+      fprintf(stderr, ERROR_LABEL " Unable to place poison.\n");
+      exit_status = EXIT_TILE_PLACEMENT_ERROR;
+      goto cleanup;
+    }
+  }
+
+  if (interrupted)
+    exit_status = 128 + interrupted;
+
+cleanup:
+  /* Keep terminal restoration and board cleanup paired on every exit path. */
+  restore_terminal();
+
+  if (interrupted) {
+    printf(COLOR_RESET "\n\n");
+  } else if (exit_status == EXIT_OK) {
+    print_game_summary(&game);
+  }
+
+  free(game.board);
+  return exit_status;
+}

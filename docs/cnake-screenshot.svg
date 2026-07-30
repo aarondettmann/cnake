@@ -1,0 +1,91 @@
+<svg height="244" width="321.6" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0,0)">
+<filter filterUnits="userSpaceOnUse" height="316" id="shadow" width="393.6" x="-32" y="-24">
+<feGaussianBlur stdDeviation="12"/>
+</filter>
+<rect fill="#000000c0" filter="url(#shadow)" height="244" rx="10" ry="10" width="321.6" x="4" y="12"/>
+<rect fill="#282c34" height="244" rx="10" ry="10" width="321.6"/>
+<clipPath id="header">
+<rect height="28" width="321.6"/>
+</clipPath>
+<rect clip-path="url(#header)" fill="#383837" height="56" rx="10" ry="10" width="321.6"/>
+<line stroke="#000000c0" stroke-width="0.5" x1="0" x2="321.6" y1="28" y2="28"/><text dominant-baseline="central" fill="#b3b3b3" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" x="160.8" y="14">cnake</text>
+<g>
+<circle cx="14" cy="14" fill="#ff5f56" r="6" stroke="#ff5f56" stroke-width="0.5"/>
+<circle cx="34" cy="14" fill="#ffbd2e" r="6" stroke="#ffbd2e" stroke-width="0.5"/>
+<circle cx="54" cy="14" fill="#28c941" r="6" stroke="#28c941" stroke-width="0.5"/>
+</g>
+<svg class="terminal" font-family="JetBrains Mono, Fira Code, Source Code Pro, Cascadia Code, Consolas, Menlo, Monaco, DejaVu Sans Mono, monospace, Symbols Nerd Font Mono, Cascadia Mono" font-size="12" height="216" width="321.6" y="28">
+<svg fill="#dcdfe4" x="9.6" y="7.2">
+<g>
+<svg height="201.6" viewBox="0 0 25.2 16.8" width="302.4">
+<g stroke-width="0.025"/>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="0">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7">╭──────── </tspan><tspan fill="#96d58a">●●▶ </tspan><tspan fill="#96d58a">CNAKE </tspan><tspan fill="#96d58a" opacity="0.5">(1729)</tspan><tspan> </tspan><tspan fill="#3ae1f7">────────╮</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="14.4">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7">╰──────────────────────────────────╯</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="43.2">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">╭─────────────╮</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">╭── </tspan><tspan fill="#3ae1f7" opacity="0.5">STATUS </tspan><tspan fill="#3ae1f7" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">6×6 </tspan><tspan fill="#3ae1f7" opacity="0.5">────╮</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="57.6">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#96d58a">▶ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan></text>
+<text textLength="0.6em" x="6.6em" xml:space="preserve" y="0.96em"><tspan fill="#edc273">✦</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>             </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan><tspan fill="#96d58a">●●▶</tspan><tspan> </tspan><tspan fill="#dcdfe4">Snake </tspan><tspan>       </tspan><tspan fill="#dcdfe4">1 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="72">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#ee82ee">× </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan></text>
+<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#edc273">✦</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Snack </tspan><tspan>       </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="86.4">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan></text>
+<text textLength="0.6em" x="1.8em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>     </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan><tspan fill="#ee82ee">×</tspan><tspan>   </tspan><tspan fill="#dcdfe4">Poison </tspan><tspan>      </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="100.8">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan></text>
+<text textLength="0.6em" x="6.6em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>             </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan></text>
+<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Obstacle </tspan><tspan>      </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="115.2">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>                    </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="129.6">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan></text>
+<text textLength="0.6em" x="1.8em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>     </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan></text>
+<text textLength="0.6em" x="5.4em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>           </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>                    </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="144">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">╰─────────────╯</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">╰────────────────────╯</tspan></text>
+</svg>
+<svg height="14.4" overflow="hidden" width="302.4" y="172.8">
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7">❯ </tspan><tspan fill="#dcdfe4">Command </tspan><tspan fill="#dcdfe4" opacity="0.5">[?]</tspan><tspan fill="#dcdfe4">: </tspan></text>
+</svg>
+</g>
+</svg>
+</svg>
+<rect fill="none" height="244" rx="10" ry="10" stroke="#000000" stroke-width="0.5" width="321.6"/>
+<rect fill="none" height="242" rx="9" ry="9" stroke="#f0f0f080" stroke-width="0.5" width="319.6" x="1" y="1"/>
+</g>
+<style>
+@font-face {
+	font-family: Fira Code;
+	font-weight: 300 700;
+	font-style: normal;
+	src: url(https://raw.githubusercontent.com/pamburus/fonts/refs/heads/main/FiraCode/FiraCode-VF.woff2) format('woff2');
+}
+@font-face {
+	font-family: JetBrains Mono;
+	font-weight: 100 800;
+	font-style: normal;
+	src: url(https://raw.githubusercontent.com/pamburus/fonts/refs/heads/main/JetBrainsMono/fonts/variable/JetBrainsMono%5Bwght%5D.woff2) format('woff2');
+}
+</style>
+</svg>
