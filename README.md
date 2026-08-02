@@ -1,27 +1,67 @@
 # Cnake
 
-*Cnake* is a simple text-based snake game written in C.
+*Cnake* is a simple, text-based snake game for the terminal, written in C.
 
-![Cnake screenshot](docs/cnake-screenshot.svg)
+| Unicode (default) | ASCII (`--ascii`) |
+| :---: | :---: |
+| ![Cnake Unicode interface](docs/cnake-screenshot.svg) | ![Cnake ASCII interface](docs/cnake-ascii-screenshot.svg) |
+
+
+**Rules**
+
+The game is won when the entire available board space is filled. Eating snacks
+increases the snake's length, while poison shortens it. Colliding with
+obstacles or consuming poison at the minimum length is fatal.
+
+**Controls**
+
+```
+╭────────── CONTROLS ──────────╮
+│           k ▲                │
+│       h ◀     ▶ l            │
+│           j ▼                │
+├──────────────────────────────┤
+│ ? Show help                  │
+│ v Toggle debug view          │
+│ c Add five segments          │
+│ q Quit                       │
+╰──────────────────────────────╯
+```
 
 ## Build, Run, and Install
 
-Requires Make and a C11 compiler on a POSIX-compatible system.
+Requires `Make` and a C11 compiler on a POSIX-compatible system.
 
 ```bash
 make
 ./cnake
 ```
-
-Optionally provide a board size and a seed:
+Display all options with:
 
 ```bash
-./cnake 6 --seed 1729
+./cnake --help
 ```
 
+This prints:
+
+```
+Usage: ./cnake [board-size] [options]
+
+Play Cnake with a board size from 4 to 10 (default 6).
+
+Options:
+  --help        Display this help and exit
+  --version     Display the version and exit
+  --ascii       Use pure ASCII characters for all terminal output
+  --seed UINT   Reproduce a game with an unsigned integer seed
+```
+
+Options and the board size can appear in any order.
+
 The seed reproduces the same board and subsequent random tile placements when
-using the same C library implementation. Without `--seed`, Cnake seeds the game
-from the current time as before.
+using the same C library implementation.
+
+---
 
 Install to `/usr/local/bin` by default:
 
@@ -43,11 +83,11 @@ make uninstall PREFIX="$HOME/.local"
 
 Packagers can stage an installation by setting `DESTDIR`.
 
-Remove the compiled binary with `make clean`.
+Remove the compiled binary and `build/` artifacts with `make clean`.
 
 ## License
 
 Copyright 2026 Aaron Dettmann
 
-Licensed under the Apache License, Version 2.0.
+Licensed under the Apache License, Version 2.0. \
 See the [LICENSE](LICENSE) file for details.
