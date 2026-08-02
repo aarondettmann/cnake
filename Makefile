@@ -1,19 +1,69 @@
 CPPFLAGS += -D_POSIX_C_SOURCE=200809L
 CFLAGS += -std=c11 -O2 -Wall -Wextra -Wpedantic
 
+CNAKE_VERSION := $(strip $(shell cat VERSION))
+VERSION_CPPFLAGS := -DCNAKE_VERSION=\"$(CNAKE_VERSION)\"
+
+ifeq ($(CNAKE_VERSION),)
+$(error VERSION must contain a version number)
+endif
+
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 INSTALL ?= install
+OBJDIR ?= build
 
-.PHONY: all clean install uninstall
+SRC := src/main.c src/cli.c src/game.c src/ui.c
+OBJ := $(SRC:src/%.c=$(OBJDIR)/%.o)
+DEPS := $(OBJ:.o=.d)
+TEST_GAME_BIN := $(OBJDIR)/test_game
+TEST_CLI_BIN := $(OBJDIR)/test_cli
+TEST_UI_BIN := $(OBJDIR)/test_ui
+TEST_BINS := $(TEST_GAME_BIN) $(TEST_CLI_BIN) $(TEST_UI_BIN)
+TEST_OBJ := $(OBJDIR)/tests/test_game.o $(OBJDIR)/tests/test_cli.o \
+	$(OBJDIR)/tests/test_ui.o
+TEST_DEPS := $(TEST_OBJ:.o=.d)
+DEPFLAGS = -MMD -MP
+
+.PHONY: all clean check install uninstall
 
 all: cnake
 
-cnake: cnake.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+cnake: $(OBJ)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
+
+$(OBJDIR)/main.o: src/main.c VERSION
+	@mkdir -p "$(dir $@)"
+	$(CC) $(CPPFLAGS) $(VERSION_CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+$(OBJDIR)/%.o: src/%.c
+	@mkdir -p "$(dir $@)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+$(OBJDIR)/tests/%.o: tests/%.c
+	@mkdir -p "$(dir $@)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc $(DEPFLAGS) -c -o $@ $<
+
+$(TEST_GAME_BIN): $(OBJDIR)/game.o $(OBJDIR)/tests/test_game.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+$(TEST_CLI_BIN): $(OBJDIR)/cli.o $(OBJDIR)/tests/test_cli.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+$(TEST_UI_BIN): $(OBJDIR)/game.o $(OBJDIR)/ui.o $(OBJDIR)/tests/test_ui.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+check: cnake $(TEST_BINS)
+	./$(TEST_GAME_BIN)
+	./$(TEST_CLI_BIN)
+	./$(TEST_UI_BIN)
+	test "$$(./cnake --version)" = "cnake $(CNAKE_VERSION)"
+	./cnake --help | grep -F -- "--ascii" >/dev/null
+	./cnake --unknown --help >/dev/null
+	./cnake --version --unknown >/dev/null
 
 clean:
-	$(RM) cnake
+	$(RM) -r cnake "$(OBJDIR)"
 
 install: cnake
 	$(INSTALL) -d "$(DESTDIR)$(BINDIR)"
@@ -21,3 +71,5 @@ install: cnake
 
 uninstall:
 	$(RM) "$(DESTDIR)$(BINDIR)/cnake"
+
+-include $(DEPS) $(TEST_DEPS)
