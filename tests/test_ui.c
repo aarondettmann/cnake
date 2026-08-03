@@ -77,8 +77,12 @@ static void render_ascii_surfaces(struct game_state *game,
   }
 }
 
-static char *capture_ascii_output(struct game_state *game,
-                                  struct ui_state *ui) {
+/*
+ * Capture either full UI surface output or just the board/header render path
+ * to make output assertions deterministic in tests.
+ */
+static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
+                               bool board_only) {
   FILE *capture = tmpfile();
   if (capture == NULL)
     return NULL;
@@ -92,7 +96,12 @@ static char *capture_ascii_output(struct game_state *game,
     return NULL;
   }
 
-  render_ascii_surfaces(game, ui);
+  if (board_only) {
+    ui_print_header(1729, game->board_size, ui);
+    ui_draw_game_board(game, ui);
+  } else {
+    render_ascii_surfaces(game, ui);
+  }
   fflush(stdout);
 
   if (dup2(saved_stdout, STDOUT_FILENO) == -1) {
@@ -166,6 +175,32 @@ static char *strip_ansi(const char *input) {
   return output;
 }
 
+/* Check whether a single rendered line contains both substrings in order. */
+static bool line_contains_both(const char *text, const char *left,
+                               const char *right) {
+  const char *cursor = text;
+
+  while (*cursor != '\0') {
+    const char *line_end = strchr(cursor, '\n');
+    if (line_end == NULL)
+      line_end = cursor + strlen(cursor);
+
+    const char *left_match = strstr(cursor, left);
+    if (left_match != NULL && left_match < line_end) {
+      const char *right_match = strstr(left_match, right);
+      if (right_match != NULL && right_match < line_end)
+        return true;
+    }
+
+    if (*line_end == '\0')
+      break;
+
+    cursor = line_end + 1;
+  }
+
+  return false;
+}
+
 static void test_ascii_rendering(void) {
   struct game_state game;
   CHECK(game_create(&game, 6));
@@ -187,7 +222,7 @@ static void test_ascii_rendering(void) {
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_ASCII, false);
 
-  char *output = capture_ascii_output(&game, &ui);
+  char *output = capture_ui_output(&game, &ui, false);
   CHECK(output != NULL);
   if (output == NULL) {
     game_destroy(&game);
@@ -244,7 +279,7 @@ static void test_monochrome_suppresses_sgr(void) {
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_ASCII, true);
 
-  char *output = capture_ascii_output(&game, &ui);
+  char *output = capture_ui_output(&game, &ui, false);
   CHECK(output != NULL);
   if (output != NULL) {
     CHECK(strstr(output, "\x1B[H\x1B[0J") != NULL);
@@ -258,10 +293,95 @@ static void test_monochrome_suppresses_sgr(void) {
   game_destroy(&game);
 }
 
+static void test_debug_panel_matches_main_layout(void) {
+  struct game_state game;
+  CHECK(game_create(&game, 10));
+  if (game.board == NULL)
+    return;
+
+  memset(game.board, 0,
+         (size_t)game.board_size * (size_t)game.board_size *
+             sizeof(*game.board));
+  game.direction = DIRECTION_RIGHT;
+  game.length = 7;
+  game_set_board_tile(&game, 0, 0, 123);
+  game_set_board_tile(&game, 1, 0, 4);
+  game_set_board_tile(&game, 2, 0, -10);
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_ASCII, false);
+  ui.show_debug = true;
+
+  char *output = capture_ui_output(&game, &ui, false);
+  CHECK(output != NULL);
+  if (output == NULL) {
+    game_destroy(&game);
+    return;
+  }
+
+  char *plain_output = strip_ansi(output);
+  CHECK(plain_output != NULL);
+  if (plain_output != NULL) {
+    CHECK(strstr(plain_output, " DEBUG ") != NULL);
+    CHECK(strstr(plain_output, " DEBUG . 10x10 ") == NULL);
+    CHECK(strstr(plain_output, "123") != NULL);
+    CHECK(strstr(plain_output, "-10") != NULL);
+    CHECK(strstr(plain_output, "   4") != NULL);
+    CHECK(line_contains_both(plain_output, "Snake", "123"));
+  }
+
+  free(plain_output);
+  free(output);
+  game_destroy(&game);
+}
+
+static void test_unicode_debug_header_alignment(void) {
+  struct game_state game;
+  CHECK(game_create(&game, 4));
+  if (game.board == NULL)
+    return;
+
+  memset(game.board, 0,
+         (size_t)game.board_size * (size_t)game.board_size *
+             sizeof(*game.board));
+  game.direction = DIRECTION_RIGHT;
+  game.length = 122;
+  game_set_board_tile(&game, 0, 0, 121);
+  game_set_board_tile(&game, 1, 0, TILE_HEAD);
+  game_set_board_tile(&game, 0, 2, TILE_OBSTACLE);
+  game_set_board_tile(&game, 2, 2, TILE_OBSTACLE);
+  game_set_board_tile(&game, 3, 2, TILE_SNACK);
+  game_set_board_tile(&game, 3, 3, TILE_POISON);
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_UNICODE, false);
+  ui.show_debug = true;
+
+  char *output = capture_ui_output(&game, &ui, true);
+  CHECK(output != NULL);
+  if (output == NULL) {
+    game_destroy(&game);
+    return;
+  }
+
+  char *plain_output = strip_ansi(output);
+  CHECK(plain_output != NULL);
+  if (plain_output != NULL) {
+    CHECK(line_contains_both(plain_output, " STATUS · 4×4 ", " DEBUG "));
+    CHECK(strstr(plain_output, " DEBUG · 4×4 ") == NULL);
+  }
+
+  free(plain_output);
+  free(output);
+  game_destroy(&game);
+}
+
 int main(void) {
   test_ascii_rendering();
   test_unicode_default();
   test_monochrome_suppresses_sgr();
+  test_debug_panel_matches_main_layout();
+  test_unicode_debug_header_alignment();
 
   return test_finish("UI");
 }
