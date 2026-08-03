@@ -16,16 +16,16 @@ obstacles or consuming poison at the minimum length is fatal.
 **Controls**
 
 ```
-╭────────── CONTROLS ──────────╮
-│           k ▲                │
-│       h ◀     ▶ l            │
-│           j ▼                │
-├──────────────────────────────┤
-│ ? Show help                  │
-│ v Toggle debug view          │
-│ c Add five segments          │
-│ q Quit                       │
-╰──────────────────────────────╯
++---------- CONTROLS ----------+
+|           k ^                |
+|       h <     > l            |
+|           j v                |
++------------------------------+
+| ? Show help                  |
+| v Toggle debug view          |
+| c Add five segments          |
+| q Quit                       |
++------------------------------+
 ```
 
 ## Build, Run, and Install
@@ -53,6 +53,7 @@ Options:
   --help        Display this help and exit
   --version     Display the version and exit
   --ascii       Use pure ASCII characters for all terminal output
+  --monochrome  Disable ANSI text styling and use default terminal colors
   --seed UINT   Reproduce a game with an unsigned integer seed
 ```
 

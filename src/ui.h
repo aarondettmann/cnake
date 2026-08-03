@@ -43,12 +43,14 @@ enum ui_mode {
 
 struct ui_state {
   bool show_debug;
+  bool monochrome;
   enum ui_mode mode;
 };
 
-void ui_initialize_state(struct ui_state *ui, enum ui_mode mode);
+void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
+                         bool monochrome);
 void ui_set_interrupted_flag(volatile sig_atomic_t *interrupted);
-const char *ui_error_label(enum ui_mode mode);
+const char *ui_error_label(enum ui_mode mode, bool monochrome);
 bool ui_initialize_terminal(void);
 void ui_restore_terminal(void);
 enum board_size_parse_status ui_parse_board_size(const char *input,
@@ -67,7 +69,7 @@ void ui_print_unknown_command(const struct ui_state *ui);
 int ui_prompt_for_command(const struct ui_state *ui,
                           enum player_command *command, const char **feedback);
 const char *ui_toggle_debug(struct ui_state *ui);
-const char *ui_grow_feedback(void);
-void ui_print_interrupted_exit(void);
+const char *ui_grow_feedback(const struct ui_state *ui);
+void ui_print_interrupted_exit(const struct ui_state *ui);
 
 #endif

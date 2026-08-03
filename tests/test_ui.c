@@ -50,10 +50,10 @@ static void render_ascii_surfaces(struct game_state *game,
   ui_print_game_summary(game, ui);
   ui_print_help(ui);
   ui_print_unknown_command(ui);
-  printf("%s\n", ui_error_label(ui->mode));
+  printf("%s\n", ui_error_label(ui->mode, ui->monochrome));
   printf("%s\n", ui_toggle_debug(ui));
   printf("%s\n", ui_toggle_debug(ui));
-  printf("%s\n", ui_grow_feedback());
+  printf("%s\n", ui_grow_feedback(ui));
 
   int saved_stdin;
   FILE *input_file;
@@ -125,6 +125,23 @@ static char *capture_ascii_output(struct game_state *game,
   return output;
 }
 
+static bool has_ansi_sgr(const char *input) {
+  for (const unsigned char *byte = (const unsigned char *)input; *byte; byte++) {
+    if (*byte != '\033' || byte[1] != '[')
+      continue;
+
+    const unsigned char *cursor = byte + 2;
+    while (*cursor != '\0' && ((*cursor >= '0' && *cursor <= '9') ||
+                               *cursor == ';'))
+      cursor++;
+
+    if (*cursor == 'm')
+      return true;
+  }
+
+  return false;
+}
+
 static char *strip_ansi(const char *input) {
   size_t length = strlen(input);
   char *output = malloc(length + 1);
@@ -168,7 +185,7 @@ static void test_ascii_rendering(void) {
   game_set_board_tile(&game, 3, 1, TILE_OBSTACLE);
 
   struct ui_state ui;
-  ui_initialize_state(&ui, UI_MODE_ASCII);
+  ui_initialize_state(&ui, UI_MODE_ASCII, false);
 
   char *output = capture_ascii_output(&game, &ui);
   CHECK(output != NULL);
@@ -206,15 +223,45 @@ static void test_ascii_rendering(void) {
 
 static void test_unicode_default(void) {
   struct ui_state ui;
-  ui_initialize_state(&ui, UI_MODE_UNICODE);
+  ui_initialize_state(&ui, UI_MODE_UNICODE, false);
 
   CHECK(ui.mode == UI_MODE_UNICODE);
-  CHECK(strstr(ui_error_label(ui.mode), "× Error:") != NULL);
+  CHECK(strstr(ui_error_label(ui.mode, ui.monochrome), "× Error:") != NULL);
+}
+
+static void test_monochrome_suppresses_sgr(void) {
+  struct game_state game;
+  CHECK(game_create(&game, 6));
+  if (game.board == NULL)
+    return;
+
+  memset(game.board, 0,
+         (size_t)game.board_size * (size_t)game.board_size *
+             sizeof(*game.board));
+  game.direction = DIRECTION_RIGHT;
+  game.length = 1;
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_ASCII, true);
+
+  char *output = capture_ascii_output(&game, &ui);
+  CHECK(output != NULL);
+  if (output != NULL) {
+    CHECK(strstr(output, "\x1B[H\x1B[0J") != NULL);
+    CHECK(!has_ansi_sgr(output));
+    CHECK(strstr(output, " x Error:") != NULL);
+    CHECK(strstr(output, " * Debug view on") != NULL);
+    CHECK(strstr(output, " ! Length +5") != NULL);
+    free(output);
+  }
+
+  game_destroy(&game);
 }
 
 int main(void) {
   test_ascii_rendering();
   test_unicode_default();
+  test_monochrome_suppresses_sgr();
 
   return test_finish("UI");
 }

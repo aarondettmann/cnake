@@ -14,6 +14,7 @@ static void test_defaults(void) {
   CHECK_EQ(cli_parse_options(1, argv, &options), CLI_PARSE_OK);
   CHECK_EQ(options.action, CLI_ACTION_RUN);
   CHECK(!options.ascii);
+  CHECK(!options.monochrome);
   CHECK(!options.seed_provided);
   CHECK(options.board_size == NULL);
 }
@@ -21,18 +22,22 @@ static void test_defaults(void) {
 static void check_order(char *argv[]) {
   struct cli_options options;
 
-  CHECK_EQ(cli_parse_options(5, argv, &options), CLI_PARSE_OK);
+  CHECK_EQ(cli_parse_options(6, argv, &options), CLI_PARSE_OK);
   CHECK_EQ(options.action, CLI_ACTION_RUN);
   CHECK(options.ascii);
+  CHECK(options.monochrome);
   CHECK(options.seed_provided);
   CHECK_EQ(options.seed, 1729);
   CHECK(strcmp(options.board_size, "6") == 0);
 }
 
 static void test_option_order(void) {
-  char *ascii_first[] = {"cnake", "--ascii", "--seed", "1729", "6", NULL};
-  char *size_first[] = {"cnake", "6", "--ascii", "--seed", "1729", NULL};
-  char *seed_first[] = {"cnake", "--seed", "1729", "--ascii", "6", NULL};
+  char *ascii_first[] = {"cnake", "--ascii", "--monochrome", "--seed", "1729",
+                         "6", NULL};
+  char *size_first[] = {"cnake", "6", "--ascii", "--seed", "1729",
+                        "--monochrome", NULL};
+  char *seed_first[] = {"cnake", "--seed", "1729", "--ascii", "--monochrome",
+                        "6", NULL};
 
   check_order(ascii_first);
   check_order(size_first);
@@ -65,7 +70,7 @@ static void test_parse_errors(void) {
   char *invalid_seed[] = {"cnake", "--seed", "12x"};
   char *large_seed[] = {"cnake", "--seed", too_large};
   char *duplicate_seed[] = {"cnake", "--seed", "1", "--seed", "2"};
-  char *unknown[] = {"cnake", "--ascii", "--unknown"};
+  char *unknown[] = {"cnake", "--ascii", "--monochrome", "--unknown"};
   char *extra[] = {"cnake", "6", "7"};
   struct cli_options options;
 
@@ -79,8 +84,9 @@ static void test_parse_errors(void) {
   CHECK_EQ(cli_parse_options(3, large_seed, &options), CLI_PARSE_INVALID_SEED);
   CHECK_EQ(cli_parse_options(5, duplicate_seed, &options),
            CLI_PARSE_DUPLICATE_SEED);
-  CHECK_EQ(cli_parse_options(3, unknown, &options), CLI_PARSE_UNKNOWN_OPTION);
+  CHECK_EQ(cli_parse_options(4, unknown, &options), CLI_PARSE_UNKNOWN_OPTION);
   CHECK(options.ascii);
+  CHECK(options.monochrome);
   CHECK(strcmp(options.error_argument, "--unknown") == 0);
   CHECK_EQ(cli_parse_options(3, extra, &options), CLI_PARSE_EXTRA_ARGUMENT);
   CHECK(strcmp(options.error_argument, "7") == 0);

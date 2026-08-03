@@ -59,6 +59,7 @@ check: cnake $(TEST_BINS)
 	./$(TEST_UI_BIN)
 	test "$$(./cnake --version)" = "cnake $(CNAKE_VERSION)"
 	./cnake --help | grep -F -- "--ascii" >/dev/null
+	./cnake --help | grep -F -- "--monochrome" >/dev/null
 	./cnake --unknown --help >/dev/null
 	./cnake --version --unknown >/dev/null
 

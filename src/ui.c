@@ -20,10 +20,45 @@
 #define COLOR_MAGENTA "\x1B[95m"
 #define COLOR_CYAN "\x1B[96m"
 #define STYLE_DIM "\x1B[2m"
-#define COLOR_RESET "\033[0m"
+#define STYLE_RESET "\033[0m"
 
-#define WARNING_LABEL COLOR_YELLOW " ! Warning:" COLOR_RESET
 #define CLEAR_SCREEN "\033[H\033[0J"
+#define WARNING_LABEL_TEXT " ! Warning:"
+#define UNICODE_ERROR_LABEL_TEXT " × Error:"
+#define ASCII_ERROR_LABEL_TEXT " x Error:"
+
+struct ui_style {
+  const char *red;
+  const char *green;
+  const char *yellow;
+  const char *blue;
+  const char *magenta;
+  const char *cyan;
+  const char *dim;
+  const char *reset;
+};
+
+static const struct ui_style ANSI_STYLE = {
+    .red = COLOR_RED,
+    .green = COLOR_GREEN,
+    .yellow = COLOR_YELLOW,
+    .blue = COLOR_BLUE,
+    .magenta = COLOR_MAGENTA,
+    .cyan = COLOR_CYAN,
+    .dim = STYLE_DIM,
+    .reset = STYLE_RESET,
+};
+
+static const struct ui_style MONOCHROME_STYLE = {
+    .red = "",
+    .green = "",
+    .yellow = "",
+    .blue = "",
+    .magenta = "",
+    .cyan = "",
+    .dim = "",
+    .reset = "",
+};
 
 struct ui_theme {
   const char *empty;
@@ -48,9 +83,6 @@ struct ui_theme {
   const char *separator;
   const char *multiply;
   const char *game_over_dash;
-  const char *debug_on_feedback;
-  const char *debug_off_feedback;
-  const char *error_label;
 };
 
 static const struct ui_theme UNICODE_THEME = {
@@ -76,9 +108,6 @@ static const struct ui_theme UNICODE_THEME = {
     .separator = "·",
     .multiply = "×",
     .game_over_dash = "—",
-    .debug_on_feedback = COLOR_CYAN " ◆ " COLOR_RESET "Debug view on",
-    .debug_off_feedback = COLOR_CYAN " ◆ " COLOR_RESET "Debug view off",
-    .error_label = COLOR_RED " × Error:" COLOR_RESET,
 };
 
 static const struct ui_theme ASCII_THEME = {
@@ -104,13 +133,11 @@ static const struct ui_theme ASCII_THEME = {
     .separator = ".",
     .multiply = "x",
     .game_over_dash = "-",
-    .debug_on_feedback = COLOR_CYAN " * " COLOR_RESET "Debug view on",
-    .debug_off_feedback = COLOR_CYAN " * " COLOR_RESET "Debug view off",
-    .error_label = COLOR_RED " x Error:" COLOR_RESET,
 };
 
 static struct termios original_terminal;
 static bool terminal_initialized = false;
+static bool monochrome_output = false;
 static volatile sig_atomic_t *interrupted_flag = NULL;
 
 static const struct ui_theme *theme_for_mode(enum ui_mode mode) {
@@ -121,13 +148,22 @@ static const struct ui_theme *theme_for_ui(const struct ui_state *ui) {
   return theme_for_mode(ui->mode);
 }
 
+static const struct ui_style *style_for_monochrome(bool monochrome) {
+  return monochrome ? &MONOCHROME_STYLE : &ANSI_STYLE;
+}
+
+static const struct ui_style *style_for_ui(const struct ui_state *ui) {
+  return style_for_monochrome(ui->monochrome);
+}
+
 static void print_repeated(const char *text, int count) {
   for (int index = 0; index < count; index++)
     printf("%s", text);
 }
 
-static void print_command_prompt(const struct ui_theme *theme) {
-  printf(COLOR_CYAN " %s " COLOR_RESET, theme->prompt);
+static void print_command_prompt(const struct ui_theme *theme,
+                                 const struct ui_style *style) {
+  printf("%s %s %s", style->cyan, theme->prompt, style->reset);
 }
 
 static int board_outer_width(int board_size) { return 2 * board_size + 3; }
@@ -137,17 +173,26 @@ static int game_layout_width(int board_size) {
          STATUS_INNER_WIDTH + 2;
 }
 
-void ui_initialize_state(struct ui_state *ui, enum ui_mode mode) {
+void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
+                         bool monochrome) {
   ui->show_debug = false;
+  ui->monochrome = monochrome;
   ui->mode = mode;
+  monochrome_output = monochrome;
 }
 
 void ui_set_interrupted_flag(volatile sig_atomic_t *interrupted) {
   interrupted_flag = interrupted;
 }
 
-const char *ui_error_label(enum ui_mode mode) {
-  return theme_for_mode(mode)->error_label;
+const char *ui_error_label(enum ui_mode mode, bool monochrome) {
+  if (mode == UI_MODE_ASCII) {
+    return monochrome ? ASCII_ERROR_LABEL_TEXT
+                      : COLOR_RED ASCII_ERROR_LABEL_TEXT STYLE_RESET;
+  } else {
+    return monochrome ? UNICODE_ERROR_LABEL_TEXT
+                      : COLOR_RED UNICODE_ERROR_LABEL_TEXT STYLE_RESET;
+  }
 }
 
 static sig_atomic_t interrupted_value(void) {
@@ -177,8 +222,11 @@ void ui_restore_terminal(void) {
   if (!terminal_initialized)
     return;
 
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal) == -1)
-    fprintf(stderr, WARNING_LABEL " Unable to restore terminal settings.\n");
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal) == -1) {
+    const struct ui_style *style = style_for_monochrome(monochrome_output);
+    fprintf(stderr, "%s%s%s Unable to restore terminal settings.\n",
+            style->yellow, WARNING_LABEL_TEXT, style->reset);
+  }
 
   terminal_initialized = false;
 }
@@ -305,11 +353,12 @@ enum board_size_parse_status ui_parse_board_size(const char *input,
 
 int ui_prompt_for_board_size(const struct ui_state *ui, int *board_size) {
   const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
 
   while (true) {
-    print_command_prompt(theme);
-    printf("Board size [%d-%d] " STYLE_DIM "(default %d)" COLOR_RESET ": ",
-           MIN_BOARD_SIZE, MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
+    print_command_prompt(theme, style);
+    printf("Board size [%d-%d] %s(default %d)%s: ", MIN_BOARD_SIZE,
+           MAX_BOARD_SIZE, style->dim, DEFAULT_BOARD_SIZE, style->reset);
     fflush(stdout);
 
     char input[32];
@@ -341,11 +390,12 @@ int ui_prompt_for_board_size(const struct ui_state *ui, int *board_size) {
 
     if (status == BOARD_SIZE_INVALID) {
       printf("%s Enter a number from %d to %d, or press Enter for %d.\n",
-             theme->error_label, MIN_BOARD_SIZE, MAX_BOARD_SIZE,
-             DEFAULT_BOARD_SIZE);
+             ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
+             MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
     } else {
-      printf("%s Board size must be between %d and %d.\n", theme->error_label,
-             MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+      printf("%s Board size must be between %d and %d.\n",
+             ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
+             MAX_BOARD_SIZE);
     }
   }
 }
@@ -369,6 +419,7 @@ static const char *head_glyph(enum direction direction,
 void ui_print_header(unsigned int seed, int board_size,
                      const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
   const char *const snake[] = {theme->body, theme->body, theme->head_right};
   char seed_text[sizeof(seed) * 3 + 3];
   int seed_width =
@@ -381,86 +432,90 @@ void ui_print_header(unsigned int seed, int board_size,
   int left_fill = fill_width / 2;
   int right_fill = fill_width - left_fill;
 
-  printf(CLEAR_SCREEN COLOR_CYAN " %s", theme->top_left);
+  printf("%s%s %s", CLEAR_SCREEN, style->cyan, theme->top_left);
   print_repeated(theme->horizontal, left_fill);
 
-  printf(" " COLOR_GREEN);
+  printf(" %s", style->green);
   for (size_t index = 0; index < sizeof(snake) / sizeof(*snake); index++)
     printf("%s", snake[index]);
 
-  printf(" CNAKE " STYLE_DIM "(%s)" COLOR_RESET COLOR_CYAN " ", seed_text);
+  printf(" CNAKE %s(%s)%s%s ", style->dim, seed_text, style->reset,
+         style->cyan);
 
   print_repeated(theme->horizontal, right_fill);
   printf("%s\n %s", theme->top_right, theme->bottom_left);
   print_repeated(theme->horizontal, header_inner_width);
-  printf("%s\n\n" COLOR_RESET, theme->bottom_right);
+  printf("%s\n\n%s", theme->bottom_right, style->reset);
 }
 
 static void draw_border(int board_size, bool bottom,
-                        const struct ui_theme *theme) {
+                        const struct ui_theme *theme,
+                        const struct ui_style *style) {
   const char *left = bottom ? theme->bottom_left : theme->top_left;
   const char *right = bottom ? theme->bottom_right : theme->top_right;
 
-  printf(STYLE_DIM COLOR_CYAN " %s", left);
+  printf("%s%s %s", style->dim, style->cyan, left);
   print_repeated(theme->horizontal, board_outer_width(board_size) - 2);
-  printf("%s" COLOR_RESET, right);
+  printf("%s%s", right, style->reset);
 }
 
 static void print_tile(int tile, enum direction direction,
-                       const struct ui_theme *theme) {
+                       const struct ui_theme *theme,
+                       const struct ui_style *style) {
   if (tile > TILE_EMPTY) {
-    printf(COLOR_GREEN "%s " COLOR_RESET,
-           tile == 1 ? theme->tail : theme->body);
+    printf("%s%s %s", style->green, tile == 1 ? theme->tail : theme->body,
+           style->reset);
     return;
   }
 
   switch (tile) {
   case TILE_EMPTY:
-    printf(STYLE_DIM "%s " COLOR_RESET, theme->empty);
+    printf("%s%s %s", style->dim, theme->empty, style->reset);
     break;
   case TILE_HEAD:
-    printf(COLOR_GREEN "%s " COLOR_RESET, head_glyph(direction, theme));
+    printf("%s%s %s", style->green, head_glyph(direction, theme), style->reset);
     break;
   case TILE_OBSTACLE:
-    printf(COLOR_BLUE "%s " COLOR_RESET, theme->obstacle);
+    printf("%s%s %s", style->blue, theme->obstacle, style->reset);
     break;
   case TILE_SNACK:
-    printf(COLOR_YELLOW "%s " COLOR_RESET, theme->snack);
+    printf("%s%s %s", style->yellow, theme->snack, style->reset);
     break;
   case TILE_POISON:
-    printf(COLOR_MAGENTA "%s " COLOR_RESET, theme->poison);
+    printf("%s%s %s", style->magenta, theme->poison, style->reset);
     break;
   }
 }
 
 static void print_status_row(const struct game_state *game, int row,
-                             const struct ui_theme *theme) {
+                             const struct ui_theme *theme,
+                             const struct ui_style *style) {
   print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
-  printf(STYLE_DIM COLOR_CYAN "%s" COLOR_RESET, theme->vertical);
+  printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
 
   switch (row) {
   case 0:
-    printf(" " COLOR_GREEN "%s%s%s" COLOR_RESET " Snake      %3d ", theme->body,
-           theme->body, theme->head_right, game->length);
+    printf(" %s%s%s%s%s Snake      %3d ", style->green, theme->body,
+           theme->body, theme->head_right, style->reset, game->length);
     break;
   case 1:
-    printf(" " COLOR_YELLOW "%s" COLOR_RESET "   Snack      %3d ", theme->snack,
-           game->stats.snacks);
+    printf(" %s%s%s   Snack      %3d ", style->yellow, theme->snack,
+           style->reset, game->stats.snacks);
     break;
   case 2:
-    printf(" " COLOR_MAGENTA "%s" COLOR_RESET "   Poison     %3d ",
-           theme->poison, game->stats.poison);
+    printf(" %s%s%s   Poison     %3d ", style->magenta, theme->poison,
+           style->reset, game->stats.poison);
     break;
   case 3:
-    printf(" " COLOR_BLUE "%s" COLOR_RESET "   Obstacle       ",
-           theme->obstacle);
+    printf(" %s%s%s   Obstacle       ", style->blue, theme->obstacle,
+           style->reset);
     break;
   default:
     printf("%*s", STATUS_INNER_WIDTH, "");
     break;
   }
 
-  printf(STYLE_DIM COLOR_CYAN "%s\n" COLOR_RESET, theme->vertical);
+  printf("%s%s%s\n%s", style->dim, style->cyan, theme->vertical, style->reset);
 }
 
 /*
@@ -470,32 +525,34 @@ static void print_status_row(const struct game_state *game, int row,
 void ui_draw_game_board(const struct game_state *game,
                         const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
   int title_fill = game->board_size < 10 ? 4 : 2;
 
-  draw_border(game->board_size, false, theme);
+  draw_border(game->board_size, false, theme, style);
   print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
-  printf(STYLE_DIM COLOR_CYAN "%s", theme->top_left);
+  printf("%s%s%s", style->dim, style->cyan, theme->top_left);
   print_repeated(theme->horizontal, 2);
   printf(" STATUS %s %d%s%d ", theme->separator, game->board_size,
          theme->multiply, game->board_size);
   print_repeated(theme->horizontal, title_fill);
-  printf("%s\n" COLOR_RESET, theme->top_right);
+  printf("%s\n%s", theme->top_right, style->reset);
 
   for (int y = 0; y < game->board_size; y++) {
-    printf(STYLE_DIM COLOR_CYAN " %s " COLOR_RESET, theme->vertical);
+    printf("%s%s %s %s", style->dim, style->cyan, theme->vertical,
+           style->reset);
 
     for (int x = 0; x < game->board_size; x++)
-      print_tile(game_board_tile(game, x, y), game->direction, theme);
+      print_tile(game_board_tile(game, x, y), game->direction, theme, style);
 
-    printf(STYLE_DIM COLOR_CYAN "%s" COLOR_RESET, theme->vertical);
-    print_status_row(game, y, theme);
+    printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
+    print_status_row(game, y, theme, style);
   }
 
-  draw_border(game->board_size, true, theme);
+  draw_border(game->board_size, true, theme, style);
   print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
-  printf(STYLE_DIM COLOR_CYAN "%s", theme->bottom_left);
+  printf("%s%s%s", style->dim, style->cyan, theme->bottom_left);
   print_repeated(theme->horizontal, STATUS_INNER_WIDTH);
-  printf("%s\n" COLOR_RESET, theme->bottom_right);
+  printf("%s\n%s", theme->bottom_right, style->reset);
 
   if (!ui->show_debug)
     return;
@@ -514,94 +571,97 @@ void ui_draw_game_board(const struct game_state *game,
 void ui_print_game_status_message(enum game_status status,
                                   const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
 
   switch (status) {
   case GAME_WON:
-    printf(COLOR_GREEN "\n %s YOU WIN! %s\n" COLOR_RESET, theme->snack,
-           theme->snack);
+    printf("%s\n %s YOU WIN! %s\n%s", style->green, theme->snack, theme->snack,
+           style->reset);
     return;
   case GAME_OVER_SNAKE:
-    printf("\n Snake!" COLOR_GREEN " %s%s%s " COLOR_RESET, theme->body,
-           theme->body, theme->head_right);
+    printf("\n Snake!%s %s%s%s %s", style->green, theme->body, theme->body,
+           theme->head_right, style->reset);
     break;
   case GAME_OVER_OBSTACLE:
-    printf("\n Obstacle!" COLOR_BLUE " %s " COLOR_RESET, theme->obstacle);
+    printf("\n Obstacle!%s %s %s", style->blue, theme->obstacle, style->reset);
     break;
   case GAME_OVER_POISON:
-    printf("\n Poison!" COLOR_MAGENTA " %s " COLOR_RESET, theme->poison);
+    printf("\n Poison!%s %s %s", style->magenta, theme->poison, style->reset);
     break;
   case GAME_RUNNING:
     return;
   }
 
-  printf(COLOR_RED "%s GAME OVER! %s\n" COLOR_RESET, theme->game_over_dash,
-         theme->game_over_dash);
+  printf("%s%s GAME OVER! %s\n%s", style->red, theme->game_over_dash,
+         theme->game_over_dash, style->reset);
 }
 
 static void print_summary_row(const struct ui_theme *theme, const char *label,
-                              int value) {
-  printf(" %s " COLOR_RESET "%-14s%4d " COLOR_CYAN "%s\n", theme->vertical,
-         label, value, theme->vertical);
+                              int value, const struct ui_style *style) {
+  printf(" %s %s%-14s%4d %s%s\n", theme->vertical, style->reset, label, value,
+         style->cyan, theme->vertical);
 }
 
 void ui_print_game_summary(const struct game_state *game,
                            const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
 
-  printf("\n" COLOR_CYAN " %s", theme->top_left);
+  printf("\n%s %s", style->cyan, theme->top_left);
   print_repeated(theme->horizontal, 6);
   printf(" SCORE ");
   print_repeated(theme->horizontal, 7);
   printf("%s\n", theme->top_right);
-  print_summary_row(theme, "Moves", game->stats.moves);
-  print_summary_row(theme, "Snacks", game->stats.snacks);
-  print_summary_row(theme, "Poison", game->stats.poison);
-  printf(" %s " COLOR_RESET "%-10s%3d/%-3d+ " COLOR_CYAN "%s\n",
-         theme->vertical, "Length", game->length, game_capacity(game),
-         theme->vertical);
+  print_summary_row(theme, "Moves", game->stats.moves, style);
+  print_summary_row(theme, "Snacks", game->stats.snacks, style);
+  print_summary_row(theme, "Poison", game->stats.poison, style);
+  printf(" %s %s%-10s%3d/%-3d+ %s%s\n", theme->vertical, style->reset, "Length",
+         game->length, game_capacity(game), style->cyan, theme->vertical);
   printf(" %s", theme->bottom_left);
   print_repeated(theme->horizontal, 20);
-  printf("%s\n\n" COLOR_RESET, theme->bottom_right);
+  printf("%s\n\n%s", theme->bottom_right, style->reset);
 }
 
 static void print_help_option(const struct ui_theme *theme, const char *command,
-                              const char *description) {
-  printf("%s " COLOR_YELLOW "%-2s" COLOR_RESET "%-27s" COLOR_CYAN "%s\n",
-         theme->vertical, command, description, theme->vertical);
+                              const char *description,
+                              const struct ui_style *style) {
+  printf("%s %s%-2s%s%-27s%s%s\n", theme->vertical, style->yellow, command,
+         style->reset, description, style->cyan, theme->vertical);
 }
 
 void ui_print_help(const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
 
-  printf("\n\n" COLOR_CYAN "%s", theme->top_left);
+  printf("\n\n%s%s", style->cyan, theme->top_left);
   print_repeated(theme->horizontal, 10);
   printf(" CONTROLS ");
   print_repeated(theme->horizontal, 10);
   printf("%s\n", theme->top_right);
-  printf("%s " COLOR_RESET "          " COLOR_YELLOW "k" COLOR_GREEN
-         " %s" COLOR_RESET "                " COLOR_CYAN "%s\n",
-         theme->vertical, theme->head_up, theme->vertical);
-  printf("%s " COLOR_RESET "      " COLOR_YELLOW "h" COLOR_GREEN
-         " %s     %s " COLOR_YELLOW "l" COLOR_RESET "            " COLOR_CYAN
-         "%s\n",
-         theme->vertical, theme->head_left, theme->head_right, theme->vertical);
-  printf("%s " COLOR_RESET "          " COLOR_YELLOW "j" COLOR_GREEN
-         " %s" COLOR_RESET "                " COLOR_CYAN "%s\n",
-         theme->vertical, theme->head_down, theme->vertical);
+  printf("%s %s          %sk%s %s%s                %s%s\n", theme->vertical,
+         style->reset, style->yellow, style->green, theme->head_up,
+         style->reset, style->cyan, theme->vertical);
+  printf("%s %s      %sh%s %s     %s %sl%s            %s%s\n", theme->vertical,
+         style->reset, style->yellow, style->green, theme->head_left,
+         theme->head_right, style->yellow, style->reset, style->cyan,
+         theme->vertical);
+  printf("%s %s          %sj%s %s%s                %s%s\n", theme->vertical,
+         style->reset, style->yellow, style->green, theme->head_down,
+         style->reset, style->cyan, theme->vertical);
   printf("%s", theme->middle_left);
   print_repeated(theme->horizontal, 30);
   printf("%s\n", theme->middle_right);
-  print_help_option(theme, "?", "Show help");
-  print_help_option(theme, "v", "Toggle debug view");
-  print_help_option(theme, "c", "Add five segments");
-  print_help_option(theme, "q", "Quit");
+  print_help_option(theme, "?", "Show help", style);
+  print_help_option(theme, "v", "Toggle debug view", style);
+  print_help_option(theme, "c", "Add five segments", style);
+  print_help_option(theme, "q", "Quit", style);
   printf("%s", theme->bottom_left);
   print_repeated(theme->horizontal, 30);
-  printf("%s\n" COLOR_RESET, theme->bottom_right);
+  printf("%s\n%s", theme->bottom_right, style->reset);
 }
 
 void ui_print_unknown_command(const struct ui_state *ui) {
-  printf("\n%s Unknown command.\n", ui_error_label(ui->mode));
+  printf("\n%s Unknown command.\n", ui_error_label(ui->mode, ui->monochrome));
 }
 
 static enum player_command parse_player_command(char input) {
@@ -634,6 +694,7 @@ static enum player_command parse_player_command(char input) {
 int ui_prompt_for_command(const struct ui_state *ui,
                           enum player_command *command, const char **feedback) {
   const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
 
   printf("\n");
 
@@ -642,8 +703,8 @@ int ui_prompt_for_command(const struct ui_state *ui,
     *feedback = NULL;
   }
 
-  print_command_prompt(theme);
-  printf("Command " STYLE_DIM "[?]" COLOR_RESET ": ");
+  print_command_prompt(theme, style);
+  printf("Command %s[?]%s: ", style->dim, style->reset);
   fflush(stdout);
 
   char input;
@@ -657,12 +718,25 @@ int ui_prompt_for_command(const struct ui_state *ui,
 
 const char *ui_toggle_debug(struct ui_state *ui) {
   ui->show_debug = !ui->show_debug;
-  const struct ui_theme *theme = theme_for_ui(ui);
-  return ui->show_debug ? theme->debug_on_feedback : theme->debug_off_feedback;
+  // clang-format off
+  if (ui->mode == UI_MODE_ASCII) {
+    return ui->show_debug
+               ? (ui->monochrome ? " * Debug view on" : COLOR_CYAN " * " STYLE_RESET "Debug view on")
+               : (ui->monochrome ? " * Debug view off" : COLOR_CYAN " * " STYLE_RESET "Debug view off");
+  } else {
+    return ui->show_debug
+               ? (ui->monochrome ? " ◆ Debug view on" : COLOR_CYAN " ◆ " STYLE_RESET "Debug view on")
+               : (ui->monochrome ? " ◆ Debug view off" : COLOR_CYAN " ◆ " STYLE_RESET "Debug view off");
+  }
+  // clang-format on
 }
 
-const char *ui_grow_feedback(void) {
-  return COLOR_YELLOW " ! " COLOR_RESET "Length +5";
+const char *ui_grow_feedback(const struct ui_state *ui) {
+  return ui->monochrome ? " ! Length +5"
+                        : COLOR_YELLOW " ! " STYLE_RESET "Length +5";
 }
 
-void ui_print_interrupted_exit(void) { printf(COLOR_RESET "\n\n"); }
+void ui_print_interrupted_exit(const struct ui_state *ui) {
+  const struct ui_style *style = style_for_ui(ui);
+  printf("%s\n\n", style->reset);
+}

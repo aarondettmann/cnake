@@ -62,6 +62,8 @@ static void print_help(const char *program_name) {
          "  --help        Display this help and exit\n"
          "  --version     Display the version and exit\n"
          "  --ascii       Use pure ASCII characters for all terminal output\n"
+         "  --monochrome  Disable ANSI text styling and use default terminal "
+         "colors\n"
          "  --seed UINT   Reproduce a game with an unsigned integer seed\n",
          MIN_BOARD_SIZE, MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
 }
@@ -70,7 +72,7 @@ static int print_cli_error(enum cli_parse_status status,
                            const struct cli_options *options,
                            const char *program_name) {
   enum ui_mode mode = options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE;
-  const char *error_label = ui_error_label(mode);
+  const char *error_label = ui_error_label(mode, options->monochrome);
 
   switch (status) {
   case CLI_PARSE_UNKNOWN_OPTION:
@@ -129,7 +131,7 @@ static enum command_action apply_player_command(struct game_state *game,
     return COMMAND_REDRAW;
   case PLAYER_COMMAND_GROW:
     game_grow(game, 5);
-    *feedback = ui_grow_feedback();
+    *feedback = ui_grow_feedback(ui);
     return COMMAND_REDRAW;
   case PLAYER_COMMAND_QUIT:
     return COMMAND_QUIT;
@@ -166,12 +168,13 @@ int main(int argc, char *argv[]) {
   int exit_status = EXIT_OK;
 
   game_reset(&game);
-  ui_initialize_state(&ui, options.ascii ? UI_MODE_ASCII : UI_MODE_UNICODE);
+  ui_initialize_state(&ui, options.ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
+                      options.monochrome);
   ui_set_interrupted_flag(&interrupted);
 
   if (atexit(ui_restore_terminal) != 0) {
     fprintf(stderr, "%s Unable to register terminal cleanup.\n",
-            ui_error_label(ui.mode));
+            ui_error_label(ui.mode, ui.monochrome));
     return EXIT_TERMINAL_ERROR;
   }
 
@@ -181,7 +184,7 @@ int main(int argc, char *argv[]) {
 
   if (sigaction(SIGINT, &action, NULL) == -1) {
     fprintf(stderr, "%s Unable to install signal handler.\n",
-            ui_error_label(ui.mode));
+            ui_error_label(ui.mode, ui.monochrome));
     return EXIT_TERMINAL_ERROR;
   }
 
@@ -200,7 +203,7 @@ int main(int argc, char *argv[]) {
 
   if (!game_create(&game, board_size)) {
     fprintf(stderr, "%s Unable to allocate the game board.\n",
-            ui_error_label(ui.mode));
+            ui_error_label(ui.mode, ui.monochrome));
     return EXIT_MEMORY_ERROR;
   }
 
@@ -208,14 +211,14 @@ int main(int argc, char *argv[]) {
 
   if (!game_initialize_board(&game)) {
     fprintf(stderr, "%s Unable to place all tiles on the board.\n",
-            ui_error_label(ui.mode));
+            ui_error_label(ui.mode, ui.monochrome));
     exit_status = EXIT_TILE_PLACEMENT_ERROR;
     goto cleanup;
   }
 
   if (!ui_initialize_terminal()) {
     fprintf(stderr, "%s Unable to enable direct input mode.\n",
-            ui_error_label(ui.mode));
+            ui_error_label(ui.mode, ui.monochrome));
     exit_status = EXIT_TERMINAL_ERROR;
     goto cleanup;
   }
@@ -240,7 +243,7 @@ int main(int argc, char *argv[]) {
 
       if (input_status == COMMAND_READ_ERROR) {
         fprintf(stderr, "\n%s Unable to read a command.\n",
-                ui_error_label(ui.mode));
+                ui_error_label(ui.mode, ui.monochrome));
         exit_status = EXIT_COMMAND_ERROR;
         goto cleanup;
       }
@@ -267,7 +270,7 @@ cleanup:
   ui_restore_terminal();
 
   if (interrupted) {
-    ui_print_interrupted_exit();
+    ui_print_interrupted_exit(&ui);
   } else if (exit_status == EXIT_OK) {
     ui_print_game_summary(&game, &ui);
   }
