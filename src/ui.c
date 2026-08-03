@@ -12,6 +12,7 @@
 
 #define BOARD_STATUS_GAP_WIDTH 3
 #define STATUS_INNER_WIDTH 20
+#define STATUS_DEBUG_GAP_WIDTH 3
 
 #define COLOR_RED "\x1B[91m"
 #define COLOR_GREEN "\x1B[92m"
@@ -171,6 +172,110 @@ static int board_outer_width(int board_size) { return 2 * board_size + 3; }
 static int game_layout_width(int board_size) {
   return board_outer_width(board_size) + BOARD_STATUS_GAP_WIDTH +
          STATUS_INNER_WIDTH + 2;
+}
+
+/* Count decimal digits in an unsigned integer for width calculations. */
+static int decimal_digit_count(unsigned int value) {
+  int digits = 1;
+
+  while (value >= 10) {
+    value /= 10;
+    digits++;
+  }
+
+  return digits;
+}
+
+/*
+ * Compute the rendered title width for framed panels. Titles can optionally
+ * include board dimensions (for example "STATUS · 8×8").
+ */
+static int panel_title_width(const char *label, int board_size,
+                             bool include_size) {
+  int title_width = (int)strlen(label) + 2;
+
+  if (!include_size)
+    return title_width;
+
+  /* " LABEL SEP NxN " => label + spaces/separators + two board-size numbers */
+  int size_digits = decimal_digit_count((unsigned int)board_size);
+  return title_width + 4 + (2 * size_digits);
+}
+
+/*
+ * Find the maximum signed integer width needed for debug cells by scanning all
+ * board values, including space for a minus sign when necessary.
+ */
+static int debug_row_value_width(const struct game_state *game) {
+  unsigned int max_abs_value = 0;
+  bool has_negative = false;
+
+  for (int y = 0; y < game->board_size; y++) {
+    for (int x = 0; x < game->board_size; x++) {
+      int value = game_board_tile(game, x, y);
+      long magnitude = value < 0 ? -(long)value : (long)value;
+      if (magnitude > (long)max_abs_value)
+        max_abs_value = (unsigned int)magnitude;
+
+      if (value < 0)
+        has_negative = true;
+    }
+  }
+
+  int value_width = decimal_digit_count(max_abs_value);
+  if (has_negative)
+    value_width++;
+
+  return value_width;
+}
+
+/* Return the text width of one debug row with fixed-width, space-separated cells. */
+static int debug_row_text_width(int board_size, int value_width) {
+  if (board_size <= 0)
+    return 0;
+
+  return board_size * value_width + (board_size - 1);
+}
+
+/* Choose a debug panel width that fits both title and widest numeric row. */
+static int debug_panel_inner_width(int board_size, int value_width) {
+  int row_width = debug_row_text_width(board_size, value_width);
+  int title_width = panel_title_width("DEBUG", board_size, false);
+  int minimum_width = title_width + 2;
+  int panel_width = row_width + 2;
+
+  return panel_width > minimum_width ? panel_width : minimum_width;
+}
+
+/* Render a panel top border with centered title text. */
+static void print_panel_top(int inner_width, const char *label, int board_size,
+                            bool include_size, const struct ui_theme *theme,
+                            const struct ui_style *style) {
+  int title_width = panel_title_width(label, board_size, include_size);
+  int fill_width = inner_width - title_width;
+  int left_fill = fill_width / 2;
+  int right_fill = fill_width - left_fill;
+
+  printf("%s%s%s", style->dim, style->cyan, theme->top_left);
+  print_repeated(theme->horizontal, left_fill);
+
+  if (include_size) {
+    printf(" %s %s %d%s%d ", label, theme->separator, board_size,
+           theme->multiply, board_size);
+  } else {
+    printf(" %s ", label);
+  }
+
+  print_repeated(theme->horizontal, right_fill);
+  printf("%s", theme->top_right);
+}
+
+/* Render a panel bottom border with the given inner width. */
+static void print_panel_bottom(int inner_width, const struct ui_theme *theme,
+                               const struct ui_style *style) {
+  printf("%s%s%s", style->dim, style->cyan, theme->bottom_left);
+  print_repeated(theme->horizontal, inner_width);
+  printf("%s", theme->bottom_right);
 }
 
 void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
@@ -495,15 +600,15 @@ static void print_status_row(const struct game_state *game, int row,
 
   switch (row) {
   case 0:
-    printf(" %s%s%s%s%s Snake      %3d ", style->green, theme->body,
+    printf(" %s%s%s%s%s Snake     %4d ", style->green, theme->body,
            theme->body, theme->head_right, style->reset, game->length);
     break;
   case 1:
-    printf(" %s%s%s   Snack      %3d ", style->yellow, theme->snack,
+    printf(" %s%s%s   Snack     %4d ", style->yellow, theme->snack,
            style->reset, game->stats.snacks);
     break;
   case 2:
-    printf(" %s%s%s   Poison     %3d ", style->magenta, theme->poison,
+    printf(" %s%s%s   Poison    %4d ", style->magenta, theme->poison,
            style->reset, game->stats.poison);
     break;
   case 3:
@@ -515,27 +620,58 @@ static void print_status_row(const struct game_state *game, int row,
     break;
   }
 
-  printf("%s%s%s\n%s", style->dim, style->cyan, theme->vertical, style->reset);
+  printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
+}
+
+/* Render one debug panel row with width-aligned integer cells. */
+static void print_debug_row(const struct game_state *game, int row,
+                            int value_width, int panel_inner_width,
+                            const struct ui_theme *theme,
+                            const struct ui_style *style) {
+  int row_width = debug_row_text_width(game->board_size, value_width);
+  int right_padding = panel_inner_width - row_width - 2;
+
+  print_repeated(" ", STATUS_DEBUG_GAP_WIDTH);
+  printf("%s%s%s%s ", style->dim, style->cyan, theme->vertical, style->reset);
+
+  for (int x = 0; x < game->board_size; x++) {
+    if (x > 0)
+      printf(" ");
+    printf("%*d", value_width, game_board_tile(game, x, row));
+  }
+
+  print_repeated(" ", right_padding);
+  printf(" %s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
 }
 
 /*
- * Draw the board and fixed-width status panel side by side, followed by the
- * optional numeric board representation used for debugging.
+ * Draw the board with fixed-width status and optional debug panels.
  */
 void ui_draw_game_board(const struct game_state *game,
                         const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
-  int title_fill = game->board_size < 10 ? 4 : 2;
+  int debug_value_width = 0;
+  int debug_inner_width = 0;
+
+  if (ui->show_debug) {
+    debug_value_width = debug_row_value_width(game);
+    debug_inner_width = debug_panel_inner_width(game->board_size,
+                                                debug_value_width);
+  }
 
   draw_border(game->board_size, false, theme, style);
   print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
-  printf("%s%s%s", style->dim, style->cyan, theme->top_left);
-  print_repeated(theme->horizontal, 2);
-  printf(" STATUS %s %d%s%d ", theme->separator, game->board_size,
-         theme->multiply, game->board_size);
-  print_repeated(theme->horizontal, title_fill);
-  printf("%s\n%s", theme->top_right, style->reset);
+  print_panel_top(STATUS_INNER_WIDTH, "STATUS", game->board_size, true, theme,
+                  style);
+
+  if (ui->show_debug) {
+    print_repeated(" ", STATUS_DEBUG_GAP_WIDTH);
+    print_panel_top(debug_inner_width, "DEBUG", game->board_size, false, theme,
+                    style);
+  }
+
+  printf("\n%s", style->reset);
 
   for (int y = 0; y < game->board_size; y++) {
     printf("%s%s %s %s", style->dim, style->cyan, theme->vertical,
@@ -546,26 +682,24 @@ void ui_draw_game_board(const struct game_state *game,
 
     printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
     print_status_row(game, y, theme, style);
+
+    if (ui->show_debug)
+      print_debug_row(game, y, debug_value_width, debug_inner_width, theme,
+                      style);
+
+    printf("\n");
   }
 
   draw_border(game->board_size, true, theme, style);
   print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
-  printf("%s%s%s", style->dim, style->cyan, theme->bottom_left);
-  print_repeated(theme->horizontal, STATUS_INNER_WIDTH);
-  printf("%s\n%s", theme->bottom_right, style->reset);
+  print_panel_bottom(STATUS_INNER_WIDTH, theme, style);
 
-  if (!ui->show_debug)
-    return;
-
-  printf("\n");
-  for (int y = 0; y < game->board_size; y++) {
-    printf("|");
-
-    for (int x = 0; x < game->board_size; x++)
-      printf("%2d ", game_board_tile(game, x, y));
-
-    printf("|\n");
+  if (ui->show_debug) {
+    print_repeated(" ", STATUS_DEBUG_GAP_WIDTH);
+    print_panel_bottom(debug_inner_width, theme, style);
   }
+
+  printf("\n%s", style->reset);
 }
 
 void ui_print_game_status_message(enum game_status status,
@@ -615,7 +749,7 @@ void ui_print_game_summary(const struct game_state *game,
   print_summary_row(theme, "Moves", game->stats.moves, style);
   print_summary_row(theme, "Snacks", game->stats.snacks, style);
   print_summary_row(theme, "Poison", game->stats.poison, style);
-  printf(" %s %s%-10s%3d/%-3d+ %s%s\n", theme->vertical, style->reset, "Length",
+  printf(" %s %s%-9s%4d/%-3d+ %s%s\n", theme->vertical, style->reset, "Length",
          game->length, game_capacity(game), style->cyan, theme->vertical);
   printf(" %s", theme->bottom_left);
   print_repeated(theme->horizontal, 20);
