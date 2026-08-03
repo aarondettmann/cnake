@@ -27,12 +27,6 @@ enum direction {
   DIRECTION_RIGHT,
 };
 
-enum update_status {
-  UPDATE_OK = 0,
-  UPDATE_SNACK_PLACEMENT_ERROR,
-  UPDATE_POISON_PLACEMENT_ERROR,
-};
-
 /*
  * Negative values identify special tiles. Positive values are snake body
  * countdowns; the segment with value 1 is the tail.
@@ -73,10 +67,8 @@ void game_destroy(struct game_state *game);
 bool game_initialize_board(struct game_state *game);
 int game_board_tile(const struct game_state *game, int x, int y);
 void game_set_board_tile(struct game_state *game, int x, int y, int value);
-void game_move(struct game_state *game, enum direction direction);
+void game_step(struct game_state *game, enum direction direction);
 void game_grow(struct game_state *game, int amount);
-enum update_status game_update(struct game_state *game,
-                               struct position previous_head);
 int game_capacity(const struct game_state *game);
 
 #endif

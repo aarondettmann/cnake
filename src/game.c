@@ -1,5 +1,6 @@
 #include "game.h"
 
+#include <assert.h>
 #include <stdlib.h>
 
 void game_reset(struct game_state *game) {
@@ -145,20 +146,18 @@ static void advance_snake(struct game_state *game,
 
 /*
  * A failed respawn is acceptable only when no empty tile remains; that state
- * is handled as a win after the update.
+ * is handled as a win at the end of the step.
  */
-static bool respawn_tile_if_needed(struct game_state *game, bool should_respawn,
+static void respawn_tile_if_needed(struct game_state *game, bool should_respawn,
                                    enum tile_type type) {
   if (!should_respawn)
-    return true;
+    return;
 
-  if (place_tile(game, type))
-    return true;
-
-  return !board_contains_value(game, TILE_EMPTY);
+  if (!place_tile(game, type))
+    assert(!board_contains_value(game, TILE_EMPTY));
 }
 
-void game_move(struct game_state *game, enum direction direction) {
+static void move_head(struct game_state *game, enum direction direction) {
   int delta_x = 0;
   int delta_y = 0;
 
@@ -185,8 +184,10 @@ void game_move(struct game_state *game, enum direction direction) {
 
 void game_grow(struct game_state *game, int amount) { game->length += amount; }
 
-enum update_status game_update(struct game_state *game,
-                               struct position previous_head) {
+void game_step(struct game_state *game, enum direction direction) {
+  struct position previous_head = game->head;
+  move_head(game, direction);
+
   int tile = game_board_tile(game, game->head.x, game->head.y);
   bool spawn_snack = false;
   bool spawn_poison = false;
@@ -220,20 +221,14 @@ enum update_status game_update(struct game_state *game,
   }
 
   if (game->status != GAME_RUNNING)
-    return UPDATE_OK;
+    return;
 
   advance_snake(game, previous_head);
-
-  if (!respawn_tile_if_needed(game, spawn_snack, TILE_SNACK))
-    return UPDATE_SNACK_PLACEMENT_ERROR;
-
-  if (!respawn_tile_if_needed(game, spawn_poison, TILE_POISON))
-    return UPDATE_POISON_PLACEMENT_ERROR;
+  respawn_tile_if_needed(game, spawn_snack, TILE_SNACK);
+  respawn_tile_if_needed(game, spawn_poison, TILE_POISON);
 
   if (!board_contains_value(game, TILE_EMPTY))
     game->status = GAME_WON;
-
-  return UPDATE_OK;
 }
 
 int game_capacity(const struct game_state *game) {

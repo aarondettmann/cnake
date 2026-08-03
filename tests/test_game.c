@@ -4,30 +4,7 @@
 #include <string.h>
 
 #include "game.h"
-
-static int check_count = 0;
-static int failure_count = 0;
-
-#define CHECK(condition)                                                       \
-  do {                                                                         \
-    check_count++;                                                             \
-    if (!(condition)) {                                                        \
-      fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #condition);     \
-      failure_count++;                                                         \
-    }                                                                          \
-  } while (0)
-
-#define CHECK_EQ(actual, expected)                                             \
-  do {                                                                         \
-    int actual_value = (actual);                                               \
-    int expected_value = (expected);                                           \
-    check_count++;                                                             \
-    if (actual_value != expected_value) {                                      \
-      fprintf(stderr, "FAIL %s:%d: expected %s == %d, got %d\n", __FILE__,     \
-              __LINE__, #actual, expected_value, actual_value);                \
-      failure_count++;                                                         \
-    }                                                                          \
-  } while (0)
+#include "test.h"
 
 static bool create_game(struct game_state *game, int board_size) {
   if (game_create(game, board_size))
@@ -154,14 +131,12 @@ static void test_direction_moves_and_wrap(void) {
     clear_fixture(&game);
     place_head(&game, cases[index].start.x, cases[index].start.y);
 
-    struct position previous_head = game.head;
-    game_move(&game, cases[index].direction);
+    game_step(&game, cases[index].direction);
 
     CHECK_EQ(game.stats.moves, 1);
     CHECK_EQ(game.head.x, cases[index].end.x);
     CHECK_EQ(game.head.y, cases[index].end.y);
     CHECK_EQ(game.direction, cases[index].direction);
-    CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
     CHECK_EQ(game.status, GAME_RUNNING);
     CHECK_EQ(game_board_tile(&game, cases[index].start.x, cases[index].start.y),
              TILE_EMPTY);
@@ -184,10 +159,8 @@ static void test_tail_countdown_and_removal(void) {
   game_set_board_tile(&game, 1, 0, 2);
   game_set_board_tile(&game, 0, 0, 1);
 
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game.head.x, 3);
   CHECK_EQ(game.head.y, 0);
   CHECK_EQ(game_board_tile(&game, 3, 0), TILE_HEAD);
@@ -208,10 +181,8 @@ static void test_self_collision(void) {
   place_head(&game, 1, 1);
   game_set_board_tile(&game, 2, 1, 1);
 
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game.status, GAME_OVER_SNAKE);
   CHECK_EQ(game_board_tile(&game, 1, 1), TILE_HEAD);
   CHECK_EQ(game_board_tile(&game, 2, 1), 1);
@@ -228,10 +199,8 @@ static void test_obstacle_collision(void) {
   place_head(&game, 1, 1);
   game_set_board_tile(&game, 2, 1, TILE_OBSTACLE);
 
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game.status, GAME_OVER_OBSTACLE);
 
   game_destroy(&game);
@@ -246,10 +215,8 @@ static void test_fatal_poison_collision(void) {
   place_head(&game, 1, 1);
   game_set_board_tile(&game, 2, 1, TILE_POISON);
 
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game.status, GAME_OVER_POISON);
   CHECK_EQ(game.length, 1);
   CHECK_EQ(game.stats.poison, 1);
@@ -268,10 +235,8 @@ static void test_snack_growth_and_respawn(void) {
   game_set_board_tile(&game, 3, 3, TILE_POISON);
 
   srand(7u);
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game.status, GAME_RUNNING);
   CHECK_EQ(game.length, 2);
   CHECK_EQ(game.stats.snacks, 1);
@@ -297,10 +262,8 @@ static void test_nonfatal_poison_shrink_and_respawn(void) {
   game_set_board_tile(&game, 3, 3, TILE_SNACK);
 
   srand(11u);
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game.status, GAME_RUNNING);
   CHECK_EQ(game.length, 1);
   CHECK_EQ(game.stats.poison, 1);
@@ -324,10 +287,8 @@ static void test_manual_growth(void) {
 
   CHECK_EQ(game.length, 6);
 
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game_board_tile(&game, 1, 0), TILE_HEAD);
   CHECK_EQ(game_board_tile(&game, 0, 0), 5);
   CHECK_EQ(count_positive_tiles(&game), 1);
@@ -355,10 +316,8 @@ static void test_full_board_win_detection(void) {
     }
   }
 
-  struct position previous_head = game.head;
-  game_move(&game, DIRECTION_RIGHT);
+  game_step(&game, DIRECTION_RIGHT);
 
-  CHECK_EQ(game_update(&game, previous_head), UPDATE_OK);
   CHECK_EQ(game.status, GAME_WON);
   CHECK_EQ(game.length, 2);
   CHECK_EQ(game.stats.snacks, 1);
@@ -380,11 +339,5 @@ int main(void) {
   test_manual_growth();
   test_full_board_win_detection();
 
-  if (failure_count != 0) {
-    fprintf(stderr, "%d of %d checks failed.\n", failure_count, check_count);
-    return EXIT_FAILURE;
-  }
-
-  printf("Passed %d checks.\n", check_count);
-  return EXIT_SUCCESS;
+  return test_finish(NULL);
 }

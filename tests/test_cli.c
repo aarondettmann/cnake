@@ -5,30 +5,7 @@
 #include <string.h>
 
 #include "cli.h"
-
-static int check_count = 0;
-static int failure_count = 0;
-
-#define CHECK(condition)                                                       \
-  do {                                                                         \
-    check_count++;                                                             \
-    if (!(condition)) {                                                        \
-      fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #condition);     \
-      failure_count++;                                                         \
-    }                                                                          \
-  } while (0)
-
-#define CHECK_EQ(actual, expected)                                             \
-  do {                                                                         \
-    int actual_value = (actual);                                               \
-    int expected_value = (expected);                                           \
-    check_count++;                                                             \
-    if (actual_value != expected_value) {                                      \
-      fprintf(stderr, "FAIL %s:%d: expected %s == %d, got %d\n", __FILE__,     \
-              __LINE__, #actual, expected_value, actual_value);                \
-      failure_count++;                                                         \
-    }                                                                          \
-  } while (0)
+#include "test.h"
 
 static void test_defaults(void) {
   char *argv[] = {"cnake"};
@@ -115,11 +92,5 @@ int main(void) {
   test_informational_options();
   test_parse_errors();
 
-  if (failure_count != 0) {
-    fprintf(stderr, "%d of %d checks failed.\n", failure_count, check_count);
-    return EXIT_FAILURE;
-  }
-
-  printf("Passed %d CLI checks.\n", check_count);
-  return EXIT_SUCCESS;
+  return test_finish("CLI");
 }

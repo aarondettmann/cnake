@@ -5,31 +5,8 @@
 #include <unistd.h>
 
 #include "game.h"
+#include "test.h"
 #include "ui.h"
-
-static int check_count = 0;
-static int failure_count = 0;
-
-#define CHECK(condition)                                                       \
-  do {                                                                         \
-    check_count++;                                                             \
-    if (!(condition)) {                                                        \
-      fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #condition);     \
-      failure_count++;                                                         \
-    }                                                                          \
-  } while (0)
-
-#define CHECK_EQ(actual, expected)                                             \
-  do {                                                                         \
-    int actual_value = (actual);                                               \
-    int expected_value = (expected);                                           \
-    check_count++;                                                             \
-    if (actual_value != expected_value) {                                      \
-      fprintf(stderr, "FAIL %s:%d: expected %s == %d, got %d\n", __FILE__,     \
-              __LINE__, #actual, expected_value, actual_value);                \
-      failure_count++;                                                         \
-    }                                                                          \
-  } while (0)
 
 static bool redirect_stdin(const char *input, int *saved_stdin,
                            FILE **input_file) {
@@ -239,11 +216,5 @@ int main(void) {
   test_ascii_rendering();
   test_unicode_default();
 
-  if (failure_count != 0) {
-    fprintf(stderr, "%d of %d checks failed.\n", failure_count, check_count);
-    return EXIT_FAILURE;
-  }
-
-  printf("Passed %d UI checks.\n", check_count);
-  return EXIT_SUCCESS;
+  return test_finish("UI");
 }

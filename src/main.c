@@ -33,8 +33,7 @@
 enum command_action {
   COMMAND_REPROMPT = 0,
   COMMAND_QUIT,
-  COMMAND_SKIP_TURN,
-  COMMAND_MOVE,
+  COMMAND_REDRAW,
 };
 
 enum exit_code {
@@ -102,7 +101,8 @@ static int print_cli_error(enum cli_parse_status status,
 
 /*
  * Help, invalid input, and escape sequences do not advance the game. UI-only
- * commands redraw without changing the model; movement commands update it.
+ * commands redraw without changing the model; movement commands complete a
+ * game step before redrawing.
  */
 static enum command_action apply_player_command(struct game_state *game,
                                                 struct ui_state *ui,
@@ -110,27 +110,27 @@ static enum command_action apply_player_command(struct game_state *game,
                                                 const char **feedback) {
   switch (command) {
   case PLAYER_COMMAND_MOVE_UP:
-    game_move(game, DIRECTION_UP);
-    return COMMAND_MOVE;
+    game_step(game, DIRECTION_UP);
+    return COMMAND_REDRAW;
   case PLAYER_COMMAND_MOVE_DOWN:
-    game_move(game, DIRECTION_DOWN);
-    return COMMAND_MOVE;
+    game_step(game, DIRECTION_DOWN);
+    return COMMAND_REDRAW;
   case PLAYER_COMMAND_MOVE_LEFT:
-    game_move(game, DIRECTION_LEFT);
-    return COMMAND_MOVE;
+    game_step(game, DIRECTION_LEFT);
+    return COMMAND_REDRAW;
   case PLAYER_COMMAND_MOVE_RIGHT:
-    game_move(game, DIRECTION_RIGHT);
-    return COMMAND_MOVE;
+    game_step(game, DIRECTION_RIGHT);
+    return COMMAND_REDRAW;
   case PLAYER_COMMAND_HELP:
     ui_print_help(ui);
     return COMMAND_REPROMPT;
   case PLAYER_COMMAND_TOGGLE_DEBUG:
     *feedback = ui_toggle_debug(ui);
-    return COMMAND_SKIP_TURN;
+    return COMMAND_REDRAW;
   case PLAYER_COMMAND_GROW:
     game_grow(game, 5);
     *feedback = ui_grow_feedback();
-    return COMMAND_SKIP_TURN;
+    return COMMAND_REDRAW;
   case PLAYER_COMMAND_QUIT:
     return COMMAND_QUIT;
   case PLAYER_COMMAND_INVALID:
@@ -233,7 +233,6 @@ int main(int argc, char *argv[]) {
     }
 
     enum command_action action_result = COMMAND_REPROMPT;
-    struct position previous_head = game.head;
 
     while (action_result == COMMAND_REPROMPT) {
       enum player_command command = PLAYER_COMMAND_INVALID;
@@ -254,28 +253,11 @@ int main(int argc, char *argv[]) {
       if (input_status == COMMAND_READ_ESCAPE)
         continue;
 
-      previous_head = game.head;
       action_result = apply_player_command(&game, &ui, command, &feedback);
     }
 
     if (action_result == COMMAND_QUIT)
       break;
-
-    if (action_result == COMMAND_SKIP_TURN)
-      continue;
-
-    enum update_status update_result = game_update(&game, previous_head);
-    if (update_result == UPDATE_SNACK_PLACEMENT_ERROR) {
-      fprintf(stderr, "%s Unable to place a snack.\n", ui_error_label(ui.mode));
-      exit_status = EXIT_TILE_PLACEMENT_ERROR;
-      goto cleanup;
-    }
-
-    if (update_result == UPDATE_POISON_PLACEMENT_ERROR) {
-      fprintf(stderr, "%s Unable to place poison.\n", ui_error_label(ui.mode));
-      exit_status = EXIT_TILE_PLACEMENT_ERROR;
-      goto cleanup;
-    }
   }
 
   if (interrupted)
