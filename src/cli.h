@@ -26,6 +26,7 @@ enum cli_parse_status {
 struct cli_options {
   enum cli_action action;
   bool ascii;
+  bool monochrome;
   bool seed_provided;
   unsigned int seed;
   const char *board_size;

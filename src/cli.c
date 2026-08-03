@@ -24,13 +24,16 @@ static bool parse_seed(const char *input, unsigned int *seed) {
 
 /*
  * Informational options deliberately short-circuit all validation. Scan for
- * ASCII mode at the same time so later parse errors use the requested style.
+ * presentation mode flags at the same time so later parse errors use the
+ * requested style.
  */
 static void scan_global_options(int argc, char *argv[],
                                 struct cli_options *options) {
   for (int index = 1; index < argc; index++) {
     if (strcmp(argv[index], "--ascii") == 0)
       options->ascii = true;
+    else if (strcmp(argv[index], "--monochrome") == 0)
+      options->monochrome = true;
 
     if (options->action != CLI_ACTION_RUN)
       continue;
@@ -53,7 +56,8 @@ enum cli_parse_status cli_parse_options(int argc, char *argv[],
   for (int index = 1; index < argc; index++) {
     const char *argument = argv[index];
 
-    if (strcmp(argument, "--ascii") == 0)
+    if (strcmp(argument, "--ascii") == 0 ||
+        strcmp(argument, "--monochrome") == 0)
       continue;
 
     if (strcmp(argument, "--seed") == 0) {
