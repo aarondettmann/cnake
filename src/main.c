@@ -30,10 +30,13 @@
 #error "CNAKE_VERSION must be defined by the build"
 #endif
 
+#define ANSWER_SCORE 42
+
 enum command_action {
   COMMAND_REPROMPT = 0,
   COMMAND_QUIT,
   COMMAND_REDRAW,
+  COMMAND_SHOW_HELP,
 };
 
 enum exit_code {
@@ -124,8 +127,7 @@ static enum command_action apply_player_command(struct game_state *game,
     game_step(game, DIRECTION_RIGHT);
     return COMMAND_REDRAW;
   case PLAYER_COMMAND_HELP:
-    ui_print_help(ui);
-    return COMMAND_REPROMPT;
+    return COMMAND_SHOW_HELP;
   case PLAYER_COMMAND_TOGGLE_DEBUG:
     *feedback = ui_toggle_debug(ui);
     return COMMAND_REDRAW;
@@ -136,7 +138,6 @@ static enum command_action apply_player_command(struct game_state *game,
   case PLAYER_COMMAND_QUIT:
     return COMMAND_QUIT;
   case PLAYER_COMMAND_INVALID:
-    ui_print_unknown_command(ui);
     return COMMAND_REPROMPT;
   }
 
@@ -232,10 +233,8 @@ int main(int argc, char *argv[]) {
       ui_print_header(seed, game.board_size, &ui);
       ui_draw_game_board(&game, &ui);
 
-      if (game.status != GAME_RUNNING) {
-        ui_print_game_status_message(game.status, &ui);
+      if (game.status != GAME_RUNNING)
         break;
-      }
 
       enum command_action action_result = COMMAND_REPROMPT;
 
@@ -255,10 +254,27 @@ int main(int argc, char *argv[]) {
           break;
         }
 
-        if (input_status == COMMAND_READ_ESCAPE)
-          continue;
-
+        int previous_score = game_score(&game);
         action_result = apply_player_command(&game, &ui, command, &feedback);
+
+        if (previous_score != ANSWER_SCORE &&
+            game_score(&game) == ANSWER_SCORE)
+          feedback = ui_answer_feedback(&ui);
+      }
+
+      if (action_result == COMMAND_SHOW_HELP) {
+        bool quit = false;
+        int input_status = ui_show_help(&ui, &quit);
+
+        if (input_status == COMMAND_READ_ERROR) {
+          fprintf(stderr, "\n%s Unable to read a command.\n",
+                  ui_error_label(ui.mode, ui.monochrome));
+          exit_status = EXIT_COMMAND_ERROR;
+          goto cleanup;
+        }
+
+        if (input_status == COMMAND_READ_EOF || quit)
+          action_result = COMMAND_QUIT;
       }
 
       if (action_result == COMMAND_QUIT)
@@ -268,33 +284,23 @@ int main(int argc, char *argv[]) {
     if (interrupted)
       break;
 
-    ui_print_game_summary(&game, &ui);
-
-    if (game.status == GAME_RUNNING)
+    if (game.status == GAME_RUNNING) {
+      printf("\n");
       break;
+    }
 
     enum replay_command replay = REPLAY_COMMAND_INVALID;
+    int input_status = ui_prompt_for_replay(&ui, game.status, &replay);
 
-    while (!interrupted && replay == REPLAY_COMMAND_INVALID) {
-      int input_status = ui_prompt_for_replay(&ui, &replay);
+    if (input_status == COMMAND_READ_ERROR) {
+      fprintf(stderr, "\n%s Unable to read a command.\n",
+              ui_error_label(ui.mode, ui.monochrome));
+      exit_status = EXIT_COMMAND_ERROR;
+      goto cleanup;
+    }
 
-      if (input_status == COMMAND_READ_ERROR) {
-        fprintf(stderr, "\n%s Unable to read a command.\n",
-                ui_error_label(ui.mode, ui.monochrome));
-        exit_status = EXIT_COMMAND_ERROR;
-        goto cleanup;
-      }
-
-      if (input_status == COMMAND_READ_EOF) {
-        replay = REPLAY_COMMAND_QUIT;
-        break;
-      }
-
-      if (input_status == COMMAND_READ_ESCAPE)
-        continue;
-
-      if (replay == REPLAY_COMMAND_INVALID)
-        ui_print_unknown_command(&ui);
+    if (input_status == COMMAND_READ_EOF) {
+      replay = REPLAY_COMMAND_QUIT;
     }
 
     if (interrupted)

@@ -39,7 +39,6 @@ enum command_read_status {
   COMMAND_READ_ERROR = -1,
   COMMAND_READ_EOF = 0,
   COMMAND_READ_OK = 1,
-  COMMAND_READ_ESCAPE = 2,
 };
 
 enum ui_mode {
@@ -66,18 +65,14 @@ void ui_print_header(unsigned int seed, int board_size,
                      const struct ui_state *ui);
 void ui_draw_game_board(const struct game_state *game,
                         const struct ui_state *ui);
-void ui_print_game_status_message(enum game_status status,
-                                  const struct ui_state *ui);
-void ui_print_game_summary(const struct game_state *game,
-                           const struct ui_state *ui);
-void ui_print_help(const struct ui_state *ui);
-void ui_print_unknown_command(const struct ui_state *ui);
+int ui_show_help(const struct ui_state *ui, bool *quit);
 int ui_prompt_for_command(const struct ui_state *ui,
                           enum player_command *command, const char **feedback);
-int ui_prompt_for_replay(const struct ui_state *ui,
+int ui_prompt_for_replay(const struct ui_state *ui, enum game_status status,
                          enum replay_command *command);
 const char *ui_toggle_debug(struct ui_state *ui);
 const char *ui_grow_feedback(const struct ui_state *ui);
+const char *ui_answer_feedback(const struct ui_state *ui);
 void ui_print_interrupted_exit(const struct ui_state *ui);
 
 #endif

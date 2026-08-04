@@ -43,17 +43,11 @@ static void render_ascii_surfaces(struct game_state *game,
                                   struct ui_state *ui) {
   ui_print_header(1729, game->board_size, ui);
   ui_draw_game_board(game, ui);
-  ui_print_game_status_message(GAME_WON, ui);
-  ui_print_game_status_message(GAME_OVER_SNAKE, ui);
-  ui_print_game_status_message(GAME_OVER_OBSTACLE, ui);
-  ui_print_game_status_message(GAME_OVER_POISON, ui);
-  ui_print_game_summary(game, ui);
-  ui_print_help(ui);
-  ui_print_unknown_command(ui);
   printf("%s\n", ui_error_label(ui->mode, ui->monochrome));
   printf("%s\n", ui_toggle_debug(ui));
   printf("%s\n", ui_toggle_debug(ui));
   printf("%s\n", ui_grow_feedback(ui));
+  printf("%s\n", ui_answer_feedback(ui));
 
   int saved_stdin;
   FILE *input_file;
@@ -66,7 +60,27 @@ static void render_ascii_surfaces(struct game_state *game,
     CHECK(false);
   }
 
-  if (redirect_stdin("q", &saved_stdin, &input_file)) {
+  if (redirect_stdin("x", &saved_stdin, &input_file)) {
+    bool quit = true;
+    CHECK_EQ(ui_show_help(ui, &quit), COMMAND_READ_OK);
+    CHECK(!quit);
+    restore_stdin(saved_stdin, input_file);
+    printf("\n");
+  } else {
+    CHECK(false);
+  }
+
+  if (redirect_stdin("\033[Aq", &saved_stdin, &input_file)) {
+    bool quit = false;
+    CHECK_EQ(ui_show_help(ui, &quit), COMMAND_READ_OK);
+    CHECK(quit);
+    restore_stdin(saved_stdin, input_file);
+    printf("\n");
+  } else {
+    CHECK(false);
+  }
+
+  if (redirect_stdin("xx\033[Aq", &saved_stdin, &input_file)) {
     enum player_command command = PLAYER_COMMAND_INVALID;
     const char *feedback = NULL;
     CHECK_EQ(ui_prompt_for_command(ui, &command, &feedback), COMMAND_READ_OK);
@@ -76,13 +90,28 @@ static void render_ascii_surfaces(struct game_state *game,
     CHECK(false);
   }
 
-  if (redirect_stdin("r", &saved_stdin, &input_file)) {
-    enum replay_command command = REPLAY_COMMAND_INVALID;
-    CHECK_EQ(ui_prompt_for_replay(ui, &command), COMMAND_READ_OK);
-    CHECK_EQ(command, REPLAY_COMMAND_RETRY);
-    restore_stdin(saved_stdin, input_file);
-  } else {
-    CHECK(false);
+  const enum game_status statuses[] = {
+      GAME_WON,
+      GAME_OVER_SNAKE,
+      GAME_OVER_OBSTACLE,
+      GAME_OVER_POISON,
+  };
+
+  for (size_t index = 0; index < sizeof(statuses) / sizeof(*statuses);
+       index++) {
+    const char *input =
+        statuses[index] == GAME_OVER_POISON ? "xx\033[Ar" : "r";
+
+    if (redirect_stdin(input, &saved_stdin, &input_file)) {
+      enum replay_command command = REPLAY_COMMAND_INVALID;
+      CHECK_EQ(ui_prompt_for_replay(ui, statuses[index], &command),
+               COMMAND_READ_OK);
+      CHECK_EQ(command, REPLAY_COMMAND_RETRY);
+      restore_stdin(saved_stdin, input_file);
+      printf("\n");
+    } else {
+      CHECK(false);
+    }
   }
 }
 
@@ -160,6 +189,17 @@ static bool has_ansi_sgr(const char *input) {
   return false;
 }
 
+static int count_occurrences(const char *text, const char *needle) {
+  int count = 0;
+
+  while ((text = strstr(text, needle)) != NULL) {
+    count++;
+    text += strlen(needle);
+  }
+
+  return count;
+}
+
 static char *strip_ansi(const char *input) {
   size_t length = strlen(input);
   char *output = malloc(length + 1);
@@ -221,6 +261,10 @@ static void test_ascii_rendering(void) {
              sizeof(*game.board));
   game.direction = DIRECTION_RIGHT;
   game.length = 3;
+  game.obstacle_count = 1;
+  game.stats.moves = 15;
+  game.stats.snacks = 10;
+  game.stats.poison = 2;
   game.head = (struct position){2, 0};
   game_set_board_tile(&game, 1, 0, 2);
   game_set_board_tile(&game, 2, 0, TILE_HEAD);
@@ -245,6 +289,14 @@ static void test_ascii_rendering(void) {
   CHECK(strstr(output, "\x1B[93m* \x1B[0m") != NULL);
   CHECK(strstr(output, "\x1B[94m# \x1B[0m") != NULL);
   CHECK(strstr(output, "\x1B[95m! \x1B[0m") != NULL);
+  CHECK(strstr(output,
+               "\x1B[93m * \x1B[0mThe answer is snake.") != NULL);
+  CHECK_EQ(count_occurrences(output, "\033[1A"), 4);
+  CHECK_EQ(count_occurrences(output, "Command "), 3);
+  CHECK_EQ(count_occurrences(output, "Retry "), 6);
+  CHECK_EQ(count_occurrences(output, "Return "), 2);
+  CHECK(strstr(output, "\r\033[2K\r\n\033[2K\r") != NULL);
+  CHECK(strstr(output, "\r\033[1A\r\033[2K") != NULL);
 
   char *plain_output = strip_ansi(output);
   CHECK(plain_output != NULL);
@@ -252,8 +304,25 @@ static void test_ascii_rendering(void) {
     CHECK(strstr(plain_output, " +---------- ==> CNAKE (1729) ----------+") !=
           NULL);
     CHECK(strstr(plain_output, " +-------------+") != NULL);
+    CHECK(strstr(plain_output, "Command [?]:") != NULL);
+    CHECK(strstr(plain_output, "Retry [r] / Quit [q]:") != NULL);
+    CHECK(strstr(plain_output, "Return [any key] / Quit [q]:") != NULL);
+    CHECK(strstr(plain_output, "x Unknown command. Press ? for help.") != NULL);
+    CHECK(strstr(plain_output, "x Choose r to retry or q to quit.") != NULL);
+    CHECK(strstr(plain_output, "* YOU WIN! *") != NULL);
+    CHECK(strstr(plain_output, "==> Snake! - GAME OVER! -") != NULL);
+    CHECK(strstr(plain_output, "# Obstacle! - GAME OVER! -") != NULL);
+    CHECK(strstr(plain_output, "! Poison! - GAME OVER! -") != NULL);
     CHECK(strstr(plain_output, " | . = > . . ! |") != NULL);
     CHECK(strstr(plain_output, " | . * . # . . |") != NULL);
+    const char *score_row = strstr(plain_output, "| +   Score       97 |");
+    const char *snake_row = strstr(plain_output, "Snake");
+    CHECK(score_row != NULL);
+    CHECK(snake_row != NULL);
+    CHECK(score_row < snake_row);
+    CHECK(strstr(plain_output, "#   Obstacle") != NULL);
+    CHECK(strstr(plain_output, "* The answer is snake.") != NULL);
+    CHECK(strstr(plain_output, " SCORE ") == NULL);
     CHECK(strstr(plain_output, "+---------- CONTROLS ----------+") != NULL);
     CHECK(strstr(plain_output, " > Board size") != NULL);
     CHECK(strstr(plain_output, " > Command") != NULL);
@@ -272,6 +341,35 @@ static void test_unicode_default(void) {
 
   CHECK(ui.mode == UI_MODE_UNICODE);
   CHECK(strstr(ui_error_label(ui.mode, ui.monochrome), "× Error:") != NULL);
+  CHECK(strcmp(ui_answer_feedback(&ui),
+               "\x1B[93m ★ \x1B[0mThe answer is snake.") == 0);
+}
+
+static void test_answer_score_is_yellow(void) {
+  struct game_state game;
+  CHECK(game_create(&game, 6));
+  if (game.board == NULL)
+    return;
+
+  memset(game.board, 0,
+         (size_t)game.board_size * (size_t)game.board_size *
+             sizeof(*game.board));
+  game.stats.moves = 6;
+  game.stats.snacks = 4;
+  game.stats.poison = 1;
+  CHECK_EQ(game_score(&game), 42);
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_ASCII, false);
+
+  char *output = capture_ui_output(&game, &ui, false);
+  CHECK(output != NULL);
+  if (output != NULL) {
+    CHECK(strstr(output, "Score \x1B[93m      42\033[0m ") != NULL);
+    free(output);
+  }
+
+  game_destroy(&game);
 }
 
 static void test_monochrome_suppresses_sgr(void) {
@@ -295,8 +393,9 @@ static void test_monochrome_suppresses_sgr(void) {
     CHECK(strstr(output, "\x1B[H\x1B[0J") != NULL);
     CHECK(!has_ansi_sgr(output));
     CHECK(strstr(output, " x Error:") != NULL);
-    CHECK(strstr(output, " * Debug view on") != NULL);
-    CHECK(strstr(output, " ! Length +5") != NULL);
+    CHECK(strstr(output, " * Debug view on.") != NULL);
+    CHECK(strstr(output, " ! Length +5.") != NULL);
+    CHECK(strstr(output, " * The answer is snake.") != NULL);
     free(output);
   }
 
@@ -337,7 +436,7 @@ static void test_debug_panel_matches_main_layout(void) {
     CHECK(strstr(plain_output, "123") != NULL);
     CHECK(strstr(plain_output, "-10") != NULL);
     CHECK(strstr(plain_output, "   4") != NULL);
-    CHECK(line_contains_both(plain_output, "Snake", "123"));
+    CHECK(line_contains_both(plain_output, "Score", "123"));
   }
 
   free(plain_output);
@@ -356,6 +455,9 @@ static void test_unicode_debug_header_alignment(void) {
              sizeof(*game.board));
   game.direction = DIRECTION_RIGHT;
   game.length = 122;
+  game.stats.moves = 15;
+  game.stats.snacks = 10;
+  game.stats.poison = 2;
   game_set_board_tile(&game, 0, 0, 121);
   game_set_board_tile(&game, 1, 0, TILE_HEAD);
   game_set_board_tile(&game, 0, 2, TILE_OBSTACLE);
@@ -379,6 +481,8 @@ static void test_unicode_debug_header_alignment(void) {
   if (plain_output != NULL) {
     CHECK(line_contains_both(plain_output, " STATUS · 4×4 ", " DEBUG "));
     CHECK(strstr(plain_output, " DEBUG · 4×4 ") == NULL);
+    CHECK(strstr(plain_output, "★   Score       97") != NULL);
+    CHECK(strstr(plain_output, "▣   Obstacle") == NULL);
   }
 
   free(plain_output);
@@ -389,6 +493,7 @@ static void test_unicode_debug_header_alignment(void) {
 int main(void) {
   test_ascii_rendering();
   test_unicode_default();
+  test_answer_score_is_yellow();
   test_monochrome_suppresses_sgr();
   test_debug_panel_matches_main_layout();
   test_unicode_debug_header_alignment();

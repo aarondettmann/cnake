@@ -327,6 +327,35 @@ static void test_full_board_win_detection(void) {
   game_destroy(&game);
 }
 
+static void test_score_rewards_snacks_and_efficiency(void) {
+  struct game_state game;
+  game_reset(&game);
+
+  CHECK_EQ(game_score(&game), 0);
+
+  game.stats.snacks = 10;
+  CHECK_EQ(game_score(&game), 0);
+
+  game.stats.moves = 15;
+  CHECK_EQ(game_score(&game), 107);
+
+  game.stats.moves = 30;
+  CHECK_EQ(game_score(&game), 103);
+
+  game.stats.poison = 2;
+  CHECK_EQ(game_score(&game), 93);
+
+  game.stats.snacks = 1;
+  game.stats.moves = 1;
+  game.stats.poison = 0;
+  int perfect_single_snack_score = game_score(&game);
+  CHECK_EQ(perfect_single_snack_score, 20);
+
+  game.stats.snacks = 2;
+  game.stats.moves = 200;
+  CHECK(game_score(&game) >= perfect_single_snack_score);
+}
+
 int main(void) {
   test_initialization_invariants();
   test_direction_moves_and_wrap();
@@ -338,6 +367,7 @@ int main(void) {
   test_nonfatal_poison_shrink_and_respawn();
   test_manual_growth();
   test_full_board_win_detection();
+  test_score_rewards_snacks_and_efficiency();
 
   return test_finish(NULL);
 }
