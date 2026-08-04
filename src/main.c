@@ -201,21 +201,6 @@ int main(int argc, char *argv[]) {
       return exit_status;
   }
 
-  if (!game_create(&game, board_size)) {
-    fprintf(stderr, "%s Unable to allocate the game board.\n",
-            ui_error_label(ui.mode, ui.monochrome));
-    return EXIT_MEMORY_ERROR;
-  }
-
-  srand(seed);
-
-  if (!game_initialize_board(&game)) {
-    fprintf(stderr, "%s Unable to place all tiles on the board.\n",
-            ui_error_label(ui.mode, ui.monochrome));
-    exit_status = EXIT_TILE_PLACEMENT_ERROR;
-    goto cleanup;
-  }
-
   if (!ui_initialize_terminal()) {
     fprintf(stderr, "%s Unable to enable direct input mode.\n",
             ui_error_label(ui.mode, ui.monochrome));
@@ -223,23 +208,75 @@ int main(int argc, char *argv[]) {
     goto cleanup;
   }
 
-  const char *feedback = NULL;
-
-  /* Each turn starts from a complete render of the current state. */
   while (!interrupted) {
-    ui_print_header(seed, game.board_size, &ui);
-    ui_draw_game_board(&game, &ui);
-
-    if (game.status != GAME_RUNNING) {
-      ui_print_game_status_message(game.status, &ui);
+    if (!game_create(&game, board_size)) {
+      fprintf(stderr, "%s Unable to allocate the game board.\n",
+              ui_error_label(ui.mode, ui.monochrome));
+      exit_status = EXIT_MEMORY_ERROR;
       break;
     }
 
-    enum command_action action_result = COMMAND_REPROMPT;
+    srand(seed);
 
-    while (action_result == COMMAND_REPROMPT) {
-      enum player_command command = PLAYER_COMMAND_INVALID;
-      int input_status = ui_prompt_for_command(&ui, &command, &feedback);
+    if (!game_initialize_board(&game)) {
+      fprintf(stderr, "%s Unable to place all tiles on the board.\n",
+              ui_error_label(ui.mode, ui.monochrome));
+      exit_status = EXIT_TILE_PLACEMENT_ERROR;
+      break;
+    }
+
+    const char *feedback = NULL;
+
+    /* Each turn starts from a complete render of the current state. */
+    while (!interrupted) {
+      ui_print_header(seed, game.board_size, &ui);
+      ui_draw_game_board(&game, &ui);
+
+      if (game.status != GAME_RUNNING) {
+        ui_print_game_status_message(game.status, &ui);
+        break;
+      }
+
+      enum command_action action_result = COMMAND_REPROMPT;
+
+      while (action_result == COMMAND_REPROMPT) {
+        enum player_command command = PLAYER_COMMAND_INVALID;
+        int input_status = ui_prompt_for_command(&ui, &command, &feedback);
+
+        if (input_status == COMMAND_READ_ERROR) {
+          fprintf(stderr, "\n%s Unable to read a command.\n",
+                  ui_error_label(ui.mode, ui.monochrome));
+          exit_status = EXIT_COMMAND_ERROR;
+          goto cleanup;
+        }
+
+        if (input_status == COMMAND_READ_EOF) {
+          action_result = COMMAND_QUIT;
+          break;
+        }
+
+        if (input_status == COMMAND_READ_ESCAPE)
+          continue;
+
+        action_result = apply_player_command(&game, &ui, command, &feedback);
+      }
+
+      if (action_result == COMMAND_QUIT)
+        break;
+    }
+
+    if (interrupted)
+      break;
+
+    ui_print_game_summary(&game, &ui);
+
+    if (game.status == GAME_RUNNING)
+      break;
+
+    enum replay_command replay = REPLAY_COMMAND_INVALID;
+
+    while (!interrupted && replay == REPLAY_COMMAND_INVALID) {
+      int input_status = ui_prompt_for_replay(&ui, &replay);
 
       if (input_status == COMMAND_READ_ERROR) {
         fprintf(stderr, "\n%s Unable to read a command.\n",
@@ -249,18 +286,26 @@ int main(int argc, char *argv[]) {
       }
 
       if (input_status == COMMAND_READ_EOF) {
-        action_result = COMMAND_QUIT;
+        replay = REPLAY_COMMAND_QUIT;
         break;
       }
 
       if (input_status == COMMAND_READ_ESCAPE)
         continue;
 
-      action_result = apply_player_command(&game, &ui, command, &feedback);
+      if (replay == REPLAY_COMMAND_INVALID)
+        ui_print_unknown_command(&ui);
     }
 
-    if (action_result == COMMAND_QUIT)
+    if (interrupted)
       break;
+
+    if (replay == REPLAY_COMMAND_QUIT) {
+      printf("\n");
+      break;
+    }
+
+    game_destroy(&game);
   }
 
   if (interrupted)
@@ -271,8 +316,6 @@ cleanup:
 
   if (interrupted) {
     ui_print_interrupted_exit(&ui);
-  } else if (exit_status == EXIT_OK) {
-    ui_print_game_summary(&game, &ui);
   }
 
   game_destroy(&game);

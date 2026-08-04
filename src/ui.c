@@ -850,6 +850,31 @@ int ui_prompt_for_command(const struct ui_state *ui,
   return status;
 }
 
+int ui_prompt_for_replay(const struct ui_state *ui,
+                         enum replay_command *command) {
+  const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
+
+  print_command_prompt(theme, style);
+  printf("Retry %s[r]%s / Quit %s[q]%s: ", style->dim, style->reset, style->dim,
+         style->reset);
+  fflush(stdout);
+
+  char input;
+  int status = read_command_char(&input);
+
+  if (status == COMMAND_READ_OK) {
+    if (input == 'r')
+      *command = REPLAY_COMMAND_RETRY;
+    else if (input == 'q')
+      *command = REPLAY_COMMAND_QUIT;
+    else
+      *command = REPLAY_COMMAND_INVALID;
+  }
+
+  return status;
+}
+
 const char *ui_toggle_debug(struct ui_state *ui) {
   ui->show_debug = !ui->show_debug;
   // clang-format off
