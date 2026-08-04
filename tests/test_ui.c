@@ -75,6 +75,15 @@ static void render_ascii_surfaces(struct game_state *game,
   } else {
     CHECK(false);
   }
+
+  if (redirect_stdin("r", &saved_stdin, &input_file)) {
+    enum replay_command command = REPLAY_COMMAND_INVALID;
+    CHECK_EQ(ui_prompt_for_replay(ui, &command), COMMAND_READ_OK);
+    CHECK_EQ(command, REPLAY_COMMAND_RETRY);
+    restore_stdin(saved_stdin, input_file);
+  } else {
+    CHECK(false);
+  }
 }
 
 /*
@@ -248,6 +257,7 @@ static void test_ascii_rendering(void) {
     CHECK(strstr(plain_output, "+---------- CONTROLS ----------+") != NULL);
     CHECK(strstr(plain_output, " > Board size") != NULL);
     CHECK(strstr(plain_output, " > Command") != NULL);
+    CHECK(strstr(plain_output, " > Retry [r] / Quit [q]") != NULL);
     CHECK(strstr(plain_output, " x Error:") != NULL);
   }
 

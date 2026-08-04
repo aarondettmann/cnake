@@ -29,6 +29,12 @@ enum player_command {
   PLAYER_COMMAND_QUIT,
 };
 
+enum replay_command {
+  REPLAY_COMMAND_INVALID = 0,
+  REPLAY_COMMAND_RETRY,
+  REPLAY_COMMAND_QUIT,
+};
+
 enum command_read_status {
   COMMAND_READ_ERROR = -1,
   COMMAND_READ_EOF = 0,
@@ -68,6 +74,8 @@ void ui_print_help(const struct ui_state *ui);
 void ui_print_unknown_command(const struct ui_state *ui);
 int ui_prompt_for_command(const struct ui_state *ui,
                           enum player_command *command, const char **feedback);
+int ui_prompt_for_replay(const struct ui_state *ui,
+                         enum replay_command *command);
 const char *ui_toggle_debug(struct ui_state *ui);
 const char *ui_grow_feedback(const struct ui_state *ui);
 void ui_print_interrupted_exit(const struct ui_state *ui);
