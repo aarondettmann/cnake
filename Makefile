@@ -10,6 +10,7 @@ endif
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
+BASHCOMPDIR ?= $(PREFIX)/share/bash-completion/completions
 INSTALL ?= install
 OBJDIR ?= build
 
@@ -57,6 +58,7 @@ check: cnake $(TEST_BINS)
 	./$(TEST_GAME_BIN)
 	./$(TEST_CLI_BIN)
 	./$(TEST_UI_BIN)
+	bash -n completions/cnake
 	test "$$(./cnake --version)" = "cnake $(CNAKE_VERSION)"
 	./cnake --help | grep -F -- "--ascii" >/dev/null
 	./cnake --help | grep -F -- "--monochrome" >/dev/null
@@ -69,8 +71,12 @@ clean:
 install: cnake
 	$(INSTALL) -d "$(DESTDIR)$(BINDIR)"
 	$(INSTALL) -m 755 cnake "$(DESTDIR)$(BINDIR)/cnake"
+	$(INSTALL) -d "$(DESTDIR)$(BASHCOMPDIR)"
+	$(INSTALL) -m 644 completions/cnake \
+		"$(DESTDIR)$(BASHCOMPDIR)/cnake"
 
 uninstall:
 	$(RM) "$(DESTDIR)$(BINDIR)/cnake"
+	$(RM) "$(DESTDIR)$(BASHCOMPDIR)/cnake"
 
 -include $(DEPS) $(TEST_DEPS)

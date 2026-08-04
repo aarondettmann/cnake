@@ -1,6 +1,7 @@
 #include "game.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 
 void game_reset(struct game_state *game) {
@@ -233,4 +234,22 @@ void game_step(struct game_state *game, enum direction direction) {
 
 int game_capacity(const struct game_state *game) {
   return game->board_size * game->board_size - game->obstacle_count - 1;
+}
+
+int game_score(const struct game_state *game) {
+  int moves = game->stats.moves;
+  int snacks = game->stats.snacks;
+  int poison = game->stats.poison;
+
+  if (moves <= 0 || snacks <= 0)
+    return 0;
+
+  long long bonus_numerator = 99LL * snacks;
+  long long bonus_denominator = 10LL * moves;
+  long long bonus =
+      (bonus_numerator + bonus_denominator / 2) / bonus_denominator;
+  long long score = 10LL * snacks - 5LL * poison + bonus;
+  if (score < 0)
+    return 0;
+  return score > INT_MAX ? INT_MAX : (int)score;
 }

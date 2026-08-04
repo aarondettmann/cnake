@@ -24,6 +24,8 @@
 #define STYLE_RESET "\033[0m"
 
 #define CLEAR_SCREEN "\033[H\033[0J"
+#define CLEAR_LINE "\033[2K"
+#define CURSOR_UP_ONE_LINE "\033[1A"
 #define WARNING_LABEL_TEXT " ! Warning:"
 #define UNICODE_ERROR_LABEL_TEXT " × Error:"
 #define ASCII_ERROR_LABEL_TEXT " x Error:"
@@ -72,6 +74,7 @@ struct ui_theme {
   const char *obstacle;
   const char *snack;
   const char *poison;
+  const char *score;
   const char *top_left;
   const char *top_right;
   const char *bottom_left;
@@ -97,6 +100,7 @@ static const struct ui_theme UNICODE_THEME = {
     .obstacle = "▣",
     .snack = "✦",
     .poison = "×",
+    .score = "★",
     .top_left = "╭",
     .top_right = "╮",
     .bottom_left = "╰",
@@ -122,6 +126,7 @@ static const struct ui_theme ASCII_THEME = {
     .obstacle = "#",
     .snack = "*",
     .poison = "!",
+    .score = "+",
     .top_left = "+",
     .top_right = "+",
     .bottom_left = "+",
@@ -140,6 +145,8 @@ static struct termios original_terminal;
 static bool terminal_initialized = false;
 static bool monochrome_output = false;
 static volatile sig_atomic_t *interrupted_flag = NULL;
+
+enum { COMMAND_READ_ESCAPE = 2 };
 
 static const struct ui_theme *theme_for_mode(enum ui_mode mode) {
   return mode == UI_MODE_ASCII ? &ASCII_THEME : &UNICODE_THEME;
@@ -599,19 +606,28 @@ static void print_status_row(const struct game_state *game, int row,
   printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
 
   switch (row) {
-  case 0:
+  case 0: {
+    int score = game_score(game);
+    printf(" %s%s%s   Score ", style->yellow, theme->score, style->reset);
+    if (score == 42)
+      printf("%s%8d%s ", style->yellow, score, style->reset);
+    else
+      printf("%8d ", score);
+    break;
+  }
+  case 1:
     printf(" %s%s%s%s%s Snake     %4d ", style->green, theme->body,
            theme->body, theme->head_right, style->reset, game->length);
     break;
-  case 1:
+  case 2:
     printf(" %s%s%s   Snack     %4d ", style->yellow, theme->snack,
            style->reset, game->stats.snacks);
     break;
-  case 2:
+  case 3:
     printf(" %s%s%s   Poison    %4d ", style->magenta, theme->poison,
            style->reset, game->stats.poison);
     break;
-  case 3:
+  case 4:
     printf(" %s%s%s   Obstacle       ", style->blue, theme->obstacle,
            style->reset);
     break;
@@ -702,100 +718,70 @@ void ui_draw_game_board(const struct game_state *game,
   printf("\n%s", style->reset);
 }
 
-void ui_print_game_status_message(enum game_status status,
-                                  const struct ui_state *ui) {
+static void print_game_status_message(enum game_status status,
+                                      const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
 
   switch (status) {
   case GAME_WON:
-    printf("%s\n %s YOU WIN! %s\n%s", style->green, theme->snack, theme->snack,
+    printf("%s %s YOU WIN! %s%s", style->green, theme->snack, theme->snack,
            style->reset);
     return;
   case GAME_OVER_SNAKE:
-    printf("\n Snake!%s %s%s%s %s", style->green, theme->body, theme->body,
+    printf("%s %s%s%s%s Snake! ", style->green, theme->body, theme->body,
            theme->head_right, style->reset);
     break;
   case GAME_OVER_OBSTACLE:
-    printf("\n Obstacle!%s %s %s", style->blue, theme->obstacle, style->reset);
+    printf("%s %s%s Obstacle! ", style->blue, theme->obstacle, style->reset);
     break;
   case GAME_OVER_POISON:
-    printf("\n Poison!%s %s %s", style->magenta, theme->poison, style->reset);
+    printf("%s %s%s Poison! ", style->magenta, theme->poison, style->reset);
     break;
   case GAME_RUNNING:
     return;
   }
 
-  printf("%s%s GAME OVER! %s\n%s", style->red, theme->game_over_dash,
+  printf("%s%s GAME OVER! %s%s", style->red, theme->game_over_dash,
          theme->game_over_dash, style->reset);
-}
-
-static void print_summary_row(const struct ui_theme *theme, const char *label,
-                              int value, const struct ui_style *style) {
-  printf(" %s %s%-14s%4d %s%s\n", theme->vertical, style->reset, label, value,
-         style->cyan, theme->vertical);
-}
-
-void ui_print_game_summary(const struct game_state *game,
-                           const struct ui_state *ui) {
-  const struct ui_theme *theme = theme_for_ui(ui);
-  const struct ui_style *style = style_for_ui(ui);
-
-  printf("\n%s %s", style->cyan, theme->top_left);
-  print_repeated(theme->horizontal, 6);
-  printf(" SCORE ");
-  print_repeated(theme->horizontal, 7);
-  printf("%s\n", theme->top_right);
-  print_summary_row(theme, "Moves", game->stats.moves, style);
-  print_summary_row(theme, "Snacks", game->stats.snacks, style);
-  print_summary_row(theme, "Poison", game->stats.poison, style);
-  printf(" %s %s%-9s%4d/%-3d+ %s%s\n", theme->vertical, style->reset, "Length",
-         game->length, game_capacity(game), style->cyan, theme->vertical);
-  printf(" %s", theme->bottom_left);
-  print_repeated(theme->horizontal, 20);
-  printf("%s\n\n%s", theme->bottom_right, style->reset);
 }
 
 static void print_help_option(const struct ui_theme *theme, const char *command,
                               const char *description,
                               const struct ui_style *style) {
-  printf("%s %s%-2s%s%-27s%s%s\n", theme->vertical, style->yellow, command,
+  printf(" %s %s%-2s%s%-27s%s%s\n", theme->vertical, style->yellow, command,
          style->reset, description, style->cyan, theme->vertical);
 }
 
-void ui_print_help(const struct ui_state *ui) {
+static void print_help(const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
 
-  printf("\n\n%s%s", style->cyan, theme->top_left);
+  printf(" %s%s", style->cyan, theme->top_left);
   print_repeated(theme->horizontal, 10);
   printf(" CONTROLS ");
   print_repeated(theme->horizontal, 10);
   printf("%s\n", theme->top_right);
-  printf("%s %s          %sk%s %s%s                %s%s\n", theme->vertical,
+  printf(" %s %s          %sk%s %s%s                %s%s\n", theme->vertical,
          style->reset, style->yellow, style->green, theme->head_up,
          style->reset, style->cyan, theme->vertical);
-  printf("%s %s      %sh%s %s     %s %sl%s            %s%s\n", theme->vertical,
-         style->reset, style->yellow, style->green, theme->head_left,
-         theme->head_right, style->yellow, style->reset, style->cyan,
-         theme->vertical);
-  printf("%s %s          %sj%s %s%s                %s%s\n", theme->vertical,
+  printf(" %s %s      %sh%s %s     %s %sl%s            %s%s\n",
+         theme->vertical, style->reset, style->yellow, style->green,
+         theme->head_left, theme->head_right, style->yellow, style->reset,
+         style->cyan, theme->vertical);
+  printf(" %s %s          %sj%s %s%s                %s%s\n", theme->vertical,
          style->reset, style->yellow, style->green, theme->head_down,
          style->reset, style->cyan, theme->vertical);
-  printf("%s", theme->middle_left);
+  printf(" %s", theme->middle_left);
   print_repeated(theme->horizontal, 30);
   printf("%s\n", theme->middle_right);
   print_help_option(theme, "?", "Show help", style);
   print_help_option(theme, "v", "Toggle debug view", style);
   print_help_option(theme, "c", "Add five segments", style);
   print_help_option(theme, "q", "Quit", style);
-  printf("%s", theme->bottom_left);
+  printf(" %s", theme->bottom_left);
   print_repeated(theme->horizontal, 30);
   printf("%s\n%s", theme->bottom_right, style->reset);
-}
-
-void ui_print_unknown_command(const struct ui_state *ui) {
-  printf("\n%s Unknown command.\n", ui_error_label(ui->mode, ui->monochrome));
 }
 
 static enum player_command parse_player_command(char input) {
@@ -821,58 +807,159 @@ static enum player_command parse_player_command(char input) {
   }
 }
 
+enum input_prompt {
+  INPUT_PROMPT_COMMAND = 0,
+  INPUT_PROMPT_REPLAY,
+  INPUT_PROMPT_HELP,
+};
+
+enum input_message {
+  INPUT_MESSAGE_NONE = 0,
+  INPUT_MESSAGE_FEEDBACK,
+  INPUT_MESSAGE_GAME_STATUS,
+  INPUT_MESSAGE_INVALID_COMMAND,
+};
+
+static void print_input_prompt(enum input_prompt prompt,
+                               const struct ui_theme *theme,
+                               const struct ui_style *style) {
+  print_command_prompt(theme, style);
+
+  if (prompt == INPUT_PROMPT_COMMAND) {
+    printf("Command %s[?]%s: ", style->dim, style->reset);
+  } else if (prompt == INPUT_PROMPT_REPLAY) {
+    printf("Retry %s[r]%s / Quit %s[q]%s: ", style->dim, style->reset,
+           style->dim, style->reset);
+  } else {
+    printf("Return %s[any key]%s / Quit %s[q]%s: ", style->dim, style->reset,
+           style->dim, style->reset);
+  }
+}
+
+/*
+ * Keep one message row above one prompt row. On retries, move back to the
+ * message row and replace both rows instead of appending terminal output.
+ */
+static void render_input_area(const struct ui_state *ui,
+                              enum input_prompt prompt,
+                              enum input_message message,
+                              const char *feedback, enum game_status status,
+                              bool replace) {
+  const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
+
+  if (replace)
+    printf("\r%s", CURSOR_UP_ONE_LINE);
+
+  printf("\r%s", CLEAR_LINE);
+
+  switch (message) {
+  case INPUT_MESSAGE_FEEDBACK:
+    printf("%s", feedback);
+    break;
+  case INPUT_MESSAGE_GAME_STATUS:
+    print_game_status_message(status, ui);
+    break;
+  case INPUT_MESSAGE_INVALID_COMMAND:
+    printf("%s %s%s ", style->red,
+           ui->mode == UI_MODE_ASCII ? "x" : "×", style->reset);
+    if (prompt == INPUT_PROMPT_COMMAND)
+      printf("Unknown command. Press ? for help.");
+    else
+      printf("Choose r to retry or q to quit.");
+    break;
+  case INPUT_MESSAGE_NONE:
+    break;
+  }
+
+  printf("\r\n%s\r", CLEAR_LINE);
+  print_input_prompt(prompt, theme, style);
+  fflush(stdout);
+}
+
 /*
  * Display one-shot feedback, prompt for a command, and translate a successfully
  * read byte into a semantic player command.
  */
 int ui_prompt_for_command(const struct ui_state *ui,
                           enum player_command *command, const char **feedback) {
-  const struct ui_theme *theme = theme_for_ui(ui);
-  const struct ui_style *style = style_for_ui(ui);
+  enum input_message message =
+      *feedback == NULL ? INPUT_MESSAGE_NONE : INPUT_MESSAGE_FEEDBACK;
 
-  printf("\n");
+  render_input_area(ui, INPUT_PROMPT_COMMAND, message, *feedback, GAME_RUNNING,
+                    false);
+  *feedback = NULL;
 
-  if (*feedback != NULL) {
-    printf("%s   ", *feedback);
-    *feedback = NULL;
-  }
+  while (true) {
+    char input;
+    int status = read_command_char(&input);
 
-  print_command_prompt(theme, style);
-  printf("Command %s[?]%s: ", style->dim, style->reset);
-  fflush(stdout);
+    if (status == COMMAND_READ_ESCAPE)
+      continue;
 
-  char input;
-  int status = read_command_char(&input);
+    if (status != COMMAND_READ_OK)
+      return status;
 
-  if (status == COMMAND_READ_OK)
     *command = parse_player_command(input);
+    if (*command != PLAYER_COMMAND_INVALID)
+      return COMMAND_READ_OK;
 
-  return status;
+    render_input_area(ui, INPUT_PROMPT_COMMAND,
+                      INPUT_MESSAGE_INVALID_COMMAND, NULL, GAME_RUNNING, true);
+  }
 }
 
-int ui_prompt_for_replay(const struct ui_state *ui,
+int ui_prompt_for_replay(const struct ui_state *ui, enum game_status game_status,
                          enum replay_command *command) {
-  const struct ui_theme *theme = theme_for_ui(ui);
-  const struct ui_style *style = style_for_ui(ui);
+  render_input_area(ui, INPUT_PROMPT_REPLAY, INPUT_MESSAGE_GAME_STATUS, NULL,
+                    game_status, false);
 
-  print_command_prompt(theme, style);
-  printf("Retry %s[r]%s / Quit %s[q]%s: ", style->dim, style->reset, style->dim,
-         style->reset);
-  fflush(stdout);
+  while (true) {
+    char input;
+    int status = read_command_char(&input);
 
-  char input;
-  int status = read_command_char(&input);
+    if (status == COMMAND_READ_ESCAPE)
+      continue;
 
-  if (status == COMMAND_READ_OK) {
+    if (status != COMMAND_READ_OK)
+      return status;
+
     if (input == 'r')
       *command = REPLAY_COMMAND_RETRY;
     else if (input == 'q')
       *command = REPLAY_COMMAND_QUIT;
-    else
-      *command = REPLAY_COMMAND_INVALID;
-  }
+    else {
+      render_input_area(ui, INPUT_PROMPT_REPLAY,
+                        INPUT_MESSAGE_INVALID_COMMAND, NULL, GAME_RUNNING,
+                        true);
+      continue;
+    }
 
-  return status;
+    return COMMAND_READ_OK;
+  }
+}
+
+int ui_show_help(const struct ui_state *ui, bool *quit) {
+  printf("%s", CLEAR_SCREEN);
+  print_help(ui);
+  render_input_area(ui, INPUT_PROMPT_HELP, INPUT_MESSAGE_NONE, NULL,
+                    GAME_RUNNING, false);
+
+  while (true) {
+    char input;
+    int status = read_stdin_char(&input, -1);
+
+    if (status != COMMAND_READ_OK)
+      return status;
+
+    if (input == '\033') {
+      discard_escape_sequence();
+      continue;
+    }
+
+    *quit = input == 'q';
+    return COMMAND_READ_OK;
+  }
 }
 
 const char *ui_toggle_debug(struct ui_state *ui) {
@@ -880,19 +967,30 @@ const char *ui_toggle_debug(struct ui_state *ui) {
   // clang-format off
   if (ui->mode == UI_MODE_ASCII) {
     return ui->show_debug
-               ? (ui->monochrome ? " * Debug view on" : COLOR_CYAN " * " STYLE_RESET "Debug view on")
-               : (ui->monochrome ? " * Debug view off" : COLOR_CYAN " * " STYLE_RESET "Debug view off");
+               ? (ui->monochrome ? " * Debug view on." : COLOR_CYAN " * " STYLE_RESET "Debug view on.")
+               : (ui->monochrome ? " * Debug view off." : COLOR_CYAN " * " STYLE_RESET "Debug view off.");
   } else {
     return ui->show_debug
-               ? (ui->monochrome ? " ◆ Debug view on" : COLOR_CYAN " ◆ " STYLE_RESET "Debug view on")
-               : (ui->monochrome ? " ◆ Debug view off" : COLOR_CYAN " ◆ " STYLE_RESET "Debug view off");
+               ? (ui->monochrome ? " ◆ Debug view on." : COLOR_CYAN " ◆ " STYLE_RESET "Debug view on.")
+               : (ui->monochrome ? " ◆ Debug view off." : COLOR_CYAN " ◆ " STYLE_RESET "Debug view off.");
   }
   // clang-format on
 }
 
 const char *ui_grow_feedback(const struct ui_state *ui) {
-  return ui->monochrome ? " ! Length +5"
-                        : COLOR_YELLOW " ! " STYLE_RESET "Length +5";
+  return ui->monochrome ? " ! Length +5."
+                        : COLOR_YELLOW " ! " STYLE_RESET "Length +5.";
+}
+
+const char *ui_answer_feedback(const struct ui_state *ui) {
+  if (ui->mode == UI_MODE_ASCII)
+    return ui->monochrome
+               ? " + The answer is snake."
+               : COLOR_YELLOW " * " STYLE_RESET "The answer is snake.";
+
+  return ui->monochrome
+             ? " ★ The answer is snake."
+             : COLOR_YELLOW " ★ " STYLE_RESET "The answer is snake.";
 }
 
 void ui_print_interrupted_exit(const struct ui_state *ui) {
