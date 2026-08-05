@@ -14,15 +14,21 @@ BASHCOMPDIR ?= $(PREFIX)/share/bash-completion/completions
 INSTALL ?= install
 OBJDIR ?= build
 
-SRC := src/main.c src/cli.c src/game.c src/ui.c
+SRC := src/main.c src/app.c src/cli.c src/game.c src/input.c src/terminal.c \
+	src/ui.c
 OBJ := $(SRC:src/%.c=$(OBJDIR)/%.o)
 DEPS := $(OBJ:.o=.d)
 TEST_GAME_BIN := $(OBJDIR)/test_game
 TEST_CLI_BIN := $(OBJDIR)/test_cli
 TEST_UI_BIN := $(OBJDIR)/test_ui
-TEST_BINS := $(TEST_GAME_BIN) $(TEST_CLI_BIN) $(TEST_UI_BIN)
+TEST_INPUT_BIN := $(OBJDIR)/test_input
+TEST_TERMINAL_BIN := $(OBJDIR)/test_terminal
+TEST_APP_BIN := $(OBJDIR)/test_app
+TEST_BINS := $(TEST_GAME_BIN) $(TEST_CLI_BIN) $(TEST_UI_BIN) $(TEST_INPUT_BIN) \
+	$(TEST_TERMINAL_BIN) $(TEST_APP_BIN)
 TEST_OBJ := $(OBJDIR)/tests/test_game.o $(OBJDIR)/tests/test_cli.o \
-	$(OBJDIR)/tests/test_ui.o
+	$(OBJDIR)/tests/test_ui.o $(OBJDIR)/tests/test_input.o \
+	$(OBJDIR)/tests/test_terminal.o $(OBJDIR)/tests/test_app.o
 TEST_DEPS := $(TEST_OBJ:.o=.d)
 DEPFLAGS = -MMD -MP
 
@@ -54,10 +60,25 @@ $(TEST_CLI_BIN): $(OBJDIR)/cli.o $(OBJDIR)/tests/test_cli.o
 $(TEST_UI_BIN): $(OBJDIR)/game.o $(OBJDIR)/ui.o $(OBJDIR)/tests/test_ui.o
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
+$(TEST_INPUT_BIN): $(OBJDIR)/input.o $(OBJDIR)/terminal.o \
+	$(OBJDIR)/tests/test_input.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+$(TEST_TERMINAL_BIN): $(OBJDIR)/terminal.o $(OBJDIR)/tests/test_terminal.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+$(TEST_APP_BIN): $(OBJDIR)/app.o $(OBJDIR)/cli.o $(OBJDIR)/game.o \
+	$(OBJDIR)/input.o $(OBJDIR)/terminal.o $(OBJDIR)/ui.o \
+	$(OBJDIR)/tests/test_app.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
 check: cnake $(TEST_BINS)
 	./$(TEST_GAME_BIN)
 	./$(TEST_CLI_BIN)
 	./$(TEST_UI_BIN)
+	./$(TEST_INPUT_BIN)
+	./$(TEST_TERMINAL_BIN)
+	./$(TEST_APP_BIN)
 	bash -n completions/cnake
 	test "$$(./cnake --version)" = "cnake $(CNAKE_VERSION)"
 	./cnake --help | grep -F -- "--ascii" >/dev/null

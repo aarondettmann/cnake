@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "game.h"
+
 static bool parse_seed(const char *input, unsigned int *seed) {
   if (*input == '\0' || !isdigit((unsigned char)*input))
     return false;
@@ -94,4 +96,27 @@ enum cli_parse_status cli_parse_options(int argc, char *argv[],
   }
 
   return CLI_PARSE_OK;
+}
+
+enum board_size_parse_status cli_parse_board_size(const char *input,
+                                                  int *board_size) {
+  char *end;
+
+  errno = 0;
+  long parsed_size = strtol(input, &end, 10);
+
+  if (errno != 0 || end == input)
+    return BOARD_SIZE_INVALID;
+
+  while (*end != '\0' && isspace((unsigned char)*end))
+    end++;
+
+  if (*end != '\0')
+    return BOARD_SIZE_INVALID;
+
+  if (parsed_size < MIN_BOARD_SIZE || parsed_size > MAX_BOARD_SIZE)
+    return BOARD_SIZE_OUT_OF_RANGE;
+
+  *board_size = (int)parsed_size;
+  return BOARD_SIZE_VALID;
 }

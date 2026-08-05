@@ -8,87 +8,43 @@
 #include "test.h"
 #include "ui.h"
 
-static bool redirect_stdin(const char *input, int *saved_stdin,
-                           FILE **input_file) {
-  *input_file = tmpfile();
-  if (*input_file == NULL)
+enum capture_surface {
+  CAPTURE_BOARD,
+  CAPTURE_MESSAGES,
+  CAPTURE_PROMPTS,
+  CAPTURE_ALL,
+};
+
+static bool create_empty_game(struct game_state *game, int board_size) {
+  CHECK(game_create(game, board_size));
+  if (game->board == NULL)
     return false;
 
-  if (fputs(input, *input_file) == EOF || fflush(*input_file) == EOF ||
-      fseek(*input_file, 0, SEEK_SET) != 0) {
-    fclose(*input_file);
-    return false;
-  }
-
-  *saved_stdin = dup(STDIN_FILENO);
-  if (*saved_stdin == -1 || dup2(fileno(*input_file), STDIN_FILENO) == -1) {
-    if (*saved_stdin != -1)
-      close(*saved_stdin);
-    fclose(*input_file);
-    return false;
-  }
-
-  clearerr(stdin);
+  memset(game->board, 0,
+         (size_t)game->board_size * (size_t)game->board_size *
+             sizeof(*game->board));
   return true;
 }
 
-static void restore_stdin(int saved_stdin, FILE *input_file) {
-  CHECK(dup2(saved_stdin, STDIN_FILENO) != -1);
-  close(saved_stdin);
-  fclose(input_file);
-  clearerr(stdin);
-}
-
-static void render_ascii_surfaces(struct game_state *game,
-                                  struct ui_state *ui) {
-  ui_print_header(1729, game->board_size, ui);
-  ui_draw_game_board(game, ui);
+static void render_messages(struct ui_state *ui) {
   printf("%s\n", ui_error_label(ui->mode, ui->monochrome));
   printf("%s\n", ui_toggle_debug(ui));
   printf("%s\n", ui_toggle_debug(ui));
   printf("%s\n", ui_grow_feedback(ui));
   printf("%s\n", ui_answer_feedback(ui));
 
-  int saved_stdin;
-  FILE *input_file;
-  if (redirect_stdin("\n", &saved_stdin, &input_file)) {
-    int board_size = 0;
-    CHECK_EQ(ui_prompt_for_board_size(ui, &board_size), 0);
-    CHECK_EQ(board_size, DEFAULT_BOARD_SIZE);
-    restore_stdin(saved_stdin, input_file);
-  } else {
-    CHECK(false);
-  }
+  ui_render_board_size_prompt(ui);
+  printf("\n");
 
-  if (redirect_stdin("x", &saved_stdin, &input_file)) {
-    bool quit = true;
-    CHECK_EQ(ui_show_help(ui, &quit), COMMAND_READ_OK);
-    CHECK(!quit);
-    restore_stdin(saved_stdin, input_file);
-    printf("\n");
-  } else {
-    CHECK(false);
-  }
+  ui_render_help(ui);
+  ui_render_help_prompt(ui);
+  printf("\n");
+}
 
-  if (redirect_stdin("\033[Aq", &saved_stdin, &input_file)) {
-    bool quit = false;
-    CHECK_EQ(ui_show_help(ui, &quit), COMMAND_READ_OK);
-    CHECK(quit);
-    restore_stdin(saved_stdin, input_file);
-    printf("\n");
-  } else {
-    CHECK(false);
-  }
-
-  if (redirect_stdin("xx\033[Aq", &saved_stdin, &input_file)) {
-    enum player_command command = PLAYER_COMMAND_INVALID;
-    const char *feedback = NULL;
-    CHECK_EQ(ui_prompt_for_command(ui, &command, &feedback), COMMAND_READ_OK);
-    CHECK_EQ(command, PLAYER_COMMAND_QUIT);
-    restore_stdin(saved_stdin, input_file);
-  } else {
-    CHECK(false);
-  }
+static void render_prompts(struct ui_state *ui) {
+  ui_render_command_prompt(ui, NULL, false, false);
+  ui_render_command_prompt(ui, NULL, true, true);
+  ui_render_command_prompt(ui, NULL, true, true);
 
   const enum game_status statuses[] = {
       GAME_WON,
@@ -99,28 +55,17 @@ static void render_ascii_surfaces(struct game_state *game,
 
   for (size_t index = 0; index < sizeof(statuses) / sizeof(*statuses);
        index++) {
-    const char *input =
-        statuses[index] == GAME_OVER_POISON ? "xx\033[Ar" : "r";
-
-    if (redirect_stdin(input, &saved_stdin, &input_file)) {
-      enum replay_command command = REPLAY_COMMAND_INVALID;
-      CHECK_EQ(ui_prompt_for_replay(ui, statuses[index], &command),
-               COMMAND_READ_OK);
-      CHECK_EQ(command, REPLAY_COMMAND_RETRY);
-      restore_stdin(saved_stdin, input_file);
-      printf("\n");
-    } else {
-      CHECK(false);
+    ui_render_replay_prompt(ui, statuses[index], false, false);
+    if (statuses[index] == GAME_OVER_POISON) {
+      ui_render_replay_prompt(ui, statuses[index], true, true);
+      ui_render_replay_prompt(ui, statuses[index], true, true);
     }
+    printf("\n");
   }
 }
 
-/*
- * Capture either full UI surface output or just the board/header render path
- * to make output assertions deterministic in tests.
- */
 static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
-                               bool board_only) {
+                               enum capture_surface surface) {
   FILE *capture = tmpfile();
   if (capture == NULL)
     return NULL;
@@ -134,12 +79,14 @@ static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
     return NULL;
   }
 
-  if (board_only) {
+  if (surface == CAPTURE_BOARD || surface == CAPTURE_ALL) {
     ui_print_header(1729, game->board_size, ui);
     ui_draw_game_board(game, ui);
-  } else {
-    render_ascii_surfaces(game, ui);
   }
+  if (surface == CAPTURE_MESSAGES || surface == CAPTURE_ALL)
+    render_messages(ui);
+  if (surface == CAPTURE_PROMPTS || surface == CAPTURE_ALL)
+    render_prompts(ui);
   fflush(stdout);
 
   if (dup2(saved_stdout, STDOUT_FILENO) == -1) {
@@ -170,6 +117,15 @@ static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
   output[bytes_read] = '\0';
   fclose(capture);
   return output;
+}
+
+static bool output_is_ascii(const char *output) {
+  for (const unsigned char *byte = (const unsigned char *)output; *byte; byte++) {
+    if (*byte >= 0x80)
+      return false;
+  }
+
+  return true;
 }
 
 static bool has_ansi_sgr(const char *input) {
@@ -250,15 +206,11 @@ static bool line_contains_both(const char *text, const char *left,
   return false;
 }
 
-static void test_ascii_rendering(void) {
+static void test_ascii_board_rendering(void) {
   struct game_state game;
-  CHECK(game_create(&game, 6));
-  if (game.board == NULL)
+  if (!create_empty_game(&game, 6))
     return;
 
-  memset(game.board, 0,
-         (size_t)game.board_size * (size_t)game.board_size *
-             sizeof(*game.board));
   game.direction = DIRECTION_RIGHT;
   game.length = 3;
   game.obstacle_count = 1;
@@ -275,28 +227,18 @@ static void test_ascii_rendering(void) {
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_ASCII, false);
 
-  char *output = capture_ui_output(&game, &ui, false);
+  char *output = capture_ui_output(&game, &ui, CAPTURE_BOARD);
   CHECK(output != NULL);
   if (output == NULL) {
     game_destroy(&game);
     return;
   }
 
-  for (const unsigned char *byte = (const unsigned char *)output; *byte; byte++)
-    CHECK(*byte < 0x80);
-
+  CHECK(output_is_ascii(output));
   CHECK(strstr(output, "\x1B[92m= \x1B[0m") != NULL);
   CHECK(strstr(output, "\x1B[93m* \x1B[0m") != NULL);
   CHECK(strstr(output, "\x1B[94m# \x1B[0m") != NULL);
   CHECK(strstr(output, "\x1B[95m! \x1B[0m") != NULL);
-  CHECK(strstr(output,
-               "\x1B[93m * \x1B[0mThe answer is snake.") != NULL);
-  CHECK_EQ(count_occurrences(output, "\033[1A"), 4);
-  CHECK_EQ(count_occurrences(output, "Command "), 3);
-  CHECK_EQ(count_occurrences(output, "Retry "), 6);
-  CHECK_EQ(count_occurrences(output, "Return "), 2);
-  CHECK(strstr(output, "\r\033[2K\r\n\033[2K\r") != NULL);
-  CHECK(strstr(output, "\r\033[1A\r\033[2K") != NULL);
 
   char *plain_output = strip_ansi(output);
   CHECK(plain_output != NULL);
@@ -304,15 +246,6 @@ static void test_ascii_rendering(void) {
     CHECK(strstr(plain_output, " +---------- ==> CNAKE (1729) ----------+") !=
           NULL);
     CHECK(strstr(plain_output, " +-------------+") != NULL);
-    CHECK(strstr(plain_output, "Command [?]:") != NULL);
-    CHECK(strstr(plain_output, "Retry [r] / Quit [q]:") != NULL);
-    CHECK(strstr(plain_output, "Return [any key] / Quit [q]:") != NULL);
-    CHECK(strstr(plain_output, "x Unknown command. Press ? for help.") != NULL);
-    CHECK(strstr(plain_output, "x Choose r to retry or q to quit.") != NULL);
-    CHECK(strstr(plain_output, "* YOU WIN! *") != NULL);
-    CHECK(strstr(plain_output, "==> Snake! - GAME OVER! -") != NULL);
-    CHECK(strstr(plain_output, "# Obstacle! - GAME OVER! -") != NULL);
-    CHECK(strstr(plain_output, "! Poison! - GAME OVER! -") != NULL);
     CHECK(strstr(plain_output, " | . = > . . ! |") != NULL);
     CHECK(strstr(plain_output, " | . * . # . . |") != NULL);
     const char *score_row = strstr(plain_output, "| +   Score       97 |");
@@ -321,13 +254,7 @@ static void test_ascii_rendering(void) {
     CHECK(snake_row != NULL);
     CHECK(score_row < snake_row);
     CHECK(strstr(plain_output, "#   Obstacle") != NULL);
-    CHECK(strstr(plain_output, "* The answer is snake.") != NULL);
     CHECK(strstr(plain_output, " SCORE ") == NULL);
-    CHECK(strstr(plain_output, "+---------- CONTROLS ----------+") != NULL);
-    CHECK(strstr(plain_output, " > Board size") != NULL);
-    CHECK(strstr(plain_output, " > Command") != NULL);
-    CHECK(strstr(plain_output, " > Retry [r] / Quit [q]") != NULL);
-    CHECK(strstr(plain_output, " x Error:") != NULL);
   }
 
   free(plain_output);
@@ -335,11 +262,83 @@ static void test_ascii_rendering(void) {
   game_destroy(&game);
 }
 
-static void test_unicode_default(void) {
+static void test_ascii_messages(void) {
+  struct game_state game;
+  if (!create_empty_game(&game, 6))
+    return;
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_ASCII, false);
+
+  char *output = capture_ui_output(&game, &ui, CAPTURE_MESSAGES);
+  CHECK(output != NULL);
+  if (output != NULL) {
+    CHECK(output_is_ascii(output));
+    CHECK(strstr(output,
+                 "\x1B[93m + \x1B[0mThe answer is snake.") != NULL);
+
+    char *plain_output = strip_ansi(output);
+    CHECK(plain_output != NULL);
+    if (plain_output != NULL) {
+      CHECK(strstr(plain_output, "+ The answer is snake.") != NULL);
+      CHECK(strstr(plain_output, "+---------- CONTROLS ----------+") != NULL);
+      CHECK(strstr(plain_output, " > Board size") != NULL);
+      CHECK(strstr(plain_output, "Show help") != NULL);
+      CHECK(strstr(plain_output, "Toggle debug view") != NULL);
+      CHECK(strstr(plain_output, "Add five segments") != NULL);
+      CHECK(strstr(plain_output, "Quit") != NULL);
+      CHECK(strstr(plain_output, "Return [any key] / Quit [q]:") != NULL);
+      CHECK(strstr(plain_output, " x Error:") != NULL);
+    }
+    free(plain_output);
+  }
+
+  free(output);
+  game_destroy(&game);
+}
+
+static void test_prompt_transitions(void) {
+  struct game_state game;
+  if (!create_empty_game(&game, 6))
+    return;
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_ASCII, false);
+
+  char *output = capture_ui_output(&game, &ui, CAPTURE_PROMPTS);
+  CHECK(output != NULL);
+  if (output != NULL) {
+    CHECK(output_is_ascii(output));
+    CHECK_EQ(count_occurrences(output, "\033[1A"), 4);
+    CHECK_EQ(count_occurrences(output, "Command "), 3);
+    CHECK_EQ(count_occurrences(output, "Retry "), 6);
+    CHECK(strstr(output, "\r\033[2K\r\n\033[2K\r") != NULL);
+    CHECK(strstr(output, "\r\033[1A\r\033[2K") != NULL);
+
+    char *plain_output = strip_ansi(output);
+    CHECK(plain_output != NULL);
+    if (plain_output != NULL) {
+      CHECK(strstr(plain_output, "Command [?]:") != NULL);
+      CHECK(strstr(plain_output, "Retry [r] / Quit [q]:") != NULL);
+      CHECK(strstr(plain_output, "x Unknown command. Press ? for help.") !=
+            NULL);
+      CHECK(strstr(plain_output, "x Choose r to retry or q to quit.") != NULL);
+      CHECK(strstr(plain_output, "* YOU WIN! *") != NULL);
+      CHECK(strstr(plain_output, "==> Snake! - GAME OVER! -") != NULL);
+      CHECK(strstr(plain_output, "# Obstacle! - GAME OVER! -") != NULL);
+      CHECK(strstr(plain_output, "! Poison! - GAME OVER! -") != NULL);
+    }
+    free(plain_output);
+  }
+
+  free(output);
+  game_destroy(&game);
+}
+
+static void test_unicode_theme_strings(void) {
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_UNICODE, false);
 
-  CHECK(ui.mode == UI_MODE_UNICODE);
   CHECK(strstr(ui_error_label(ui.mode, ui.monochrome), "× Error:") != NULL);
   CHECK(strcmp(ui_answer_feedback(&ui),
                "\x1B[93m ★ \x1B[0mThe answer is snake.") == 0);
@@ -347,13 +346,9 @@ static void test_unicode_default(void) {
 
 static void test_answer_score_is_yellow(void) {
   struct game_state game;
-  CHECK(game_create(&game, 6));
-  if (game.board == NULL)
+  if (!create_empty_game(&game, 6))
     return;
 
-  memset(game.board, 0,
-         (size_t)game.board_size * (size_t)game.board_size *
-             sizeof(*game.board));
   game.stats.moves = 6;
   game.stats.snacks = 4;
   game.stats.poison = 1;
@@ -362,7 +357,7 @@ static void test_answer_score_is_yellow(void) {
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_ASCII, false);
 
-  char *output = capture_ui_output(&game, &ui, false);
+  char *output = capture_ui_output(&game, &ui, CAPTURE_BOARD);
   CHECK(output != NULL);
   if (output != NULL) {
     CHECK(strstr(output, "Score \x1B[93m      42\033[0m ") != NULL);
@@ -374,20 +369,16 @@ static void test_answer_score_is_yellow(void) {
 
 static void test_monochrome_suppresses_sgr(void) {
   struct game_state game;
-  CHECK(game_create(&game, 6));
-  if (game.board == NULL)
+  if (!create_empty_game(&game, 6))
     return;
 
-  memset(game.board, 0,
-         (size_t)game.board_size * (size_t)game.board_size *
-             sizeof(*game.board));
   game.direction = DIRECTION_RIGHT;
   game.length = 1;
 
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_ASCII, true);
 
-  char *output = capture_ui_output(&game, &ui, false);
+  char *output = capture_ui_output(&game, &ui, CAPTURE_ALL);
   CHECK(output != NULL);
   if (output != NULL) {
     CHECK(strstr(output, "\x1B[H\x1B[0J") != NULL);
@@ -395,7 +386,7 @@ static void test_monochrome_suppresses_sgr(void) {
     CHECK(strstr(output, " x Error:") != NULL);
     CHECK(strstr(output, " * Debug view on.") != NULL);
     CHECK(strstr(output, " ! Length +5.") != NULL);
-    CHECK(strstr(output, " * The answer is snake.") != NULL);
+    CHECK(strstr(output, " + The answer is snake.") != NULL);
     free(output);
   }
 
@@ -404,13 +395,9 @@ static void test_monochrome_suppresses_sgr(void) {
 
 static void test_debug_panel_matches_main_layout(void) {
   struct game_state game;
-  CHECK(game_create(&game, 10));
-  if (game.board == NULL)
+  if (!create_empty_game(&game, 10))
     return;
 
-  memset(game.board, 0,
-         (size_t)game.board_size * (size_t)game.board_size *
-             sizeof(*game.board));
   game.direction = DIRECTION_RIGHT;
   game.length = 7;
   game_set_board_tile(&game, 0, 0, 123);
@@ -421,7 +408,7 @@ static void test_debug_panel_matches_main_layout(void) {
   ui_initialize_state(&ui, UI_MODE_ASCII, false);
   ui.show_debug = true;
 
-  char *output = capture_ui_output(&game, &ui, false);
+  char *output = capture_ui_output(&game, &ui, CAPTURE_BOARD);
   CHECK(output != NULL);
   if (output == NULL) {
     game_destroy(&game);
@@ -446,13 +433,9 @@ static void test_debug_panel_matches_main_layout(void) {
 
 static void test_unicode_debug_header_alignment(void) {
   struct game_state game;
-  CHECK(game_create(&game, 4));
-  if (game.board == NULL)
+  if (!create_empty_game(&game, 4))
     return;
 
-  memset(game.board, 0,
-         (size_t)game.board_size * (size_t)game.board_size *
-             sizeof(*game.board));
   game.direction = DIRECTION_RIGHT;
   game.length = 122;
   game.stats.moves = 15;
@@ -469,7 +452,7 @@ static void test_unicode_debug_header_alignment(void) {
   ui_initialize_state(&ui, UI_MODE_UNICODE, false);
   ui.show_debug = true;
 
-  char *output = capture_ui_output(&game, &ui, true);
+  char *output = capture_ui_output(&game, &ui, CAPTURE_BOARD);
   CHECK(output != NULL);
   if (output == NULL) {
     game_destroy(&game);
@@ -491,8 +474,10 @@ static void test_unicode_debug_header_alignment(void) {
 }
 
 int main(void) {
-  test_ascii_rendering();
-  test_unicode_default();
+  test_ascii_board_rendering();
+  test_ascii_messages();
+  test_prompt_transitions();
+  test_unicode_theme_strings();
   test_answer_score_is_yellow();
   test_monochrome_suppresses_sgr();
   test_debug_panel_matches_main_layout();
