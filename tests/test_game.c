@@ -75,6 +75,31 @@ static bool has_adjacent_obstacle(const struct game_state *game, int x, int y) {
   return false;
 }
 
+static bool board_has_only_known_tiles(const struct game_state *game) {
+  for (int y = 0; y < game->board_size; y++) {
+    for (int x = 0; x < game->board_size; x++) {
+      int tile = game_board_tile(game, x, y);
+      if (tile != TILE_EMPTY && tile != TILE_HEAD && tile != TILE_OBSTACLE &&
+          tile != TILE_SNACK && tile != TILE_POISON)
+        return false;
+    }
+  }
+
+  return true;
+}
+
+static bool obstacles_are_separated(const struct game_state *game) {
+  for (int y = 0; y < game->board_size; y++) {
+    for (int x = 0; x < game->board_size; x++) {
+      if (game_board_tile(game, x, y) == TILE_OBSTACLE &&
+          has_adjacent_obstacle(game, x, y))
+        return false;
+    }
+  }
+
+  return true;
+}
+
 static void test_initialization_invariants(void) {
   for (int board_size = MIN_BOARD_SIZE; board_size <= MAX_BOARD_SIZE;
        board_size++) {
@@ -93,19 +118,8 @@ static void test_initialization_invariants(void) {
     CHECK_EQ(count_positive_tiles(&game), 0);
     CHECK_EQ(count_tiles(&game, TILE_OBSTACLE), game.obstacle_count);
     CHECK(game.obstacle_count <= board_size * board_size / 10 + 1);
-
-    for (int y = 0; y < board_size; y++) {
-      for (int x = 0; x < board_size; x++) {
-        int tile = game_board_tile(&game, x, y);
-
-        CHECK(tile == TILE_EMPTY || tile == TILE_HEAD ||
-              tile == TILE_OBSTACLE || tile == TILE_SNACK ||
-              tile == TILE_POISON);
-
-        if (tile == TILE_OBSTACLE)
-          CHECK(!has_adjacent_obstacle(&game, x, y));
-      }
-    }
+    CHECK(board_has_only_known_tiles(&game));
+    CHECK(obstacles_are_separated(&game));
 
     game_destroy(&game);
   }

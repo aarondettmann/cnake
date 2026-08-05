@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "cli.h"
+#include "game.h"
 #include "test.h"
 
 static void test_defaults(void) {
@@ -92,11 +93,25 @@ static void test_parse_errors(void) {
   CHECK(strcmp(options.error_argument, "7") == 0);
 }
 
+static void test_board_size_parsing(void) {
+  int board_size = 0;
+
+  CHECK_EQ(cli_parse_board_size("4", &board_size), BOARD_SIZE_VALID);
+  CHECK_EQ(board_size, MIN_BOARD_SIZE);
+  CHECK_EQ(cli_parse_board_size("10 \n", &board_size), BOARD_SIZE_VALID);
+  CHECK_EQ(board_size, MAX_BOARD_SIZE);
+  CHECK_EQ(cli_parse_board_size("3", &board_size), BOARD_SIZE_OUT_OF_RANGE);
+  CHECK_EQ(cli_parse_board_size("11", &board_size), BOARD_SIZE_OUT_OF_RANGE);
+  CHECK_EQ(cli_parse_board_size("six", &board_size), BOARD_SIZE_INVALID);
+  CHECK_EQ(cli_parse_board_size("6x", &board_size), BOARD_SIZE_INVALID);
+}
+
 int main(void) {
   test_defaults();
   test_option_order();
   test_informational_options();
   test_parse_errors();
+  test_board_size_parsing();
 
   return test_finish("CLI");
 }

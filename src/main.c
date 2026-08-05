@@ -1,6 +1,6 @@
 /**
  * @file main.c
- * @brief Cnake - Main program orchestration.
+ * @brief Cnake - CLI entry point.
  *
  * ---
  *
@@ -15,42 +15,17 @@
  * Licensed under the Apache License, Version 2.0.
  */
 
+#include "app.h"
 #include "cli.h"
 #include "game.h"
 #include "ui.h"
 
 #include <limits.h>
-#include <signal.h>
-#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
 
 #ifndef CNAKE_VERSION
 #error "CNAKE_VERSION must be defined by the build"
 #endif
-
-#define ANSWER_SCORE 42
-
-enum command_action {
-  COMMAND_REPROMPT = 0,
-  COMMAND_QUIT,
-  COMMAND_REDRAW,
-  COMMAND_SHOW_HELP,
-};
-
-enum exit_code {
-  EXIT_OK = 0,
-  EXIT_INPUT_ERROR = 1,
-  EXIT_MEMORY_ERROR = 2,
-  EXIT_TILE_PLACEMENT_ERROR = 3,
-  EXIT_TERMINAL_ERROR = 4,
-  EXIT_COMMAND_ERROR = 5,
-};
-
-static volatile sig_atomic_t interrupted = 0;
-
-static void handle_signal(int signal_number) { interrupted = signal_number; }
 
 static void print_usage(FILE *stream, const char *program_name) {
   fprintf(stream, "Usage: %s [board-size] [options]\n", program_name);
@@ -97,51 +72,11 @@ static int print_cli_error(enum cli_parse_status status,
             options->error_argument);
     break;
   case CLI_PARSE_OK:
-    return EXIT_OK;
+    return APP_EXIT_OK;
   }
 
   print_usage(stderr, program_name);
-  return EXIT_INPUT_ERROR;
-}
-
-/*
- * Help, invalid input, and escape sequences do not advance the game. UI-only
- * commands redraw without changing the model; movement commands complete a
- * game step before redrawing.
- */
-static enum command_action apply_player_command(struct game_state *game,
-                                                struct ui_state *ui,
-                                                enum player_command command,
-                                                const char **feedback) {
-  switch (command) {
-  case PLAYER_COMMAND_MOVE_UP:
-    game_step(game, DIRECTION_UP);
-    return COMMAND_REDRAW;
-  case PLAYER_COMMAND_MOVE_DOWN:
-    game_step(game, DIRECTION_DOWN);
-    return COMMAND_REDRAW;
-  case PLAYER_COMMAND_MOVE_LEFT:
-    game_step(game, DIRECTION_LEFT);
-    return COMMAND_REDRAW;
-  case PLAYER_COMMAND_MOVE_RIGHT:
-    game_step(game, DIRECTION_RIGHT);
-    return COMMAND_REDRAW;
-  case PLAYER_COMMAND_HELP:
-    return COMMAND_SHOW_HELP;
-  case PLAYER_COMMAND_TOGGLE_DEBUG:
-    *feedback = ui_toggle_debug(ui);
-    return COMMAND_REDRAW;
-  case PLAYER_COMMAND_GROW:
-    game_grow(game, 5);
-    *feedback = ui_grow_feedback(ui);
-    return COMMAND_REDRAW;
-  case PLAYER_COMMAND_QUIT:
-    return COMMAND_QUIT;
-  case PLAYER_COMMAND_INVALID:
-    return COMMAND_REPROMPT;
-  }
-
-  return COMMAND_REPROMPT;
+  return APP_EXIT_INPUT_ERROR;
 }
 
 int main(int argc, char *argv[]) {
@@ -153,177 +88,13 @@ int main(int argc, char *argv[]) {
 
   if (options.action == CLI_ACTION_HELP) {
     print_help(argv[0]);
-    return EXIT_OK;
+    return APP_EXIT_OK;
   }
 
   if (options.action == CLI_ACTION_VERSION) {
     printf("cnake %s\n", CNAKE_VERSION);
-    return EXIT_OK;
+    return APP_EXIT_OK;
   }
 
-  struct game_state game;
-  struct ui_state ui;
-  unsigned int seed =
-      options.seed_provided ? options.seed : (unsigned int)time(NULL);
-  int board_size = 0;
-  int exit_status = EXIT_OK;
-
-  game_reset(&game);
-  ui_initialize_state(&ui, options.ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
-                      options.monochrome);
-  ui_set_interrupted_flag(&interrupted);
-
-  if (atexit(ui_restore_terminal) != 0) {
-    fprintf(stderr, "%s Unable to register terminal cleanup.\n",
-            ui_error_label(ui.mode, ui.monochrome));
-    return EXIT_TERMINAL_ERROR;
-  }
-
-  struct sigaction action = {0};
-  action.sa_handler = handle_signal;
-  sigemptyset(&action.sa_mask);
-
-  if (sigaction(SIGINT, &action, NULL) == -1) {
-    fprintf(stderr, "%s Unable to install signal handler.\n",
-            ui_error_label(ui.mode, ui.monochrome));
-    return EXIT_TERMINAL_ERROR;
-  }
-
-  bool valid_board_size =
-      options.board_size != NULL &&
-      ui_parse_board_size(options.board_size, &board_size) == BOARD_SIZE_VALID;
-
-  ui_print_header(seed, valid_board_size ? board_size : DEFAULT_BOARD_SIZE,
-                  &ui);
-
-  if (!valid_board_size) {
-    exit_status = ui_prompt_for_board_size(&ui, &board_size);
-    if (exit_status != EXIT_OK)
-      return exit_status;
-  }
-
-  if (!ui_initialize_terminal()) {
-    fprintf(stderr, "%s Unable to enable direct input mode.\n",
-            ui_error_label(ui.mode, ui.monochrome));
-    exit_status = EXIT_TERMINAL_ERROR;
-    goto cleanup;
-  }
-
-  while (!interrupted) {
-    if (!game_create(&game, board_size)) {
-      fprintf(stderr, "%s Unable to allocate the game board.\n",
-              ui_error_label(ui.mode, ui.monochrome));
-      exit_status = EXIT_MEMORY_ERROR;
-      break;
-    }
-
-    srand(seed);
-
-    if (!game_initialize_board(&game)) {
-      fprintf(stderr, "%s Unable to place all tiles on the board.\n",
-              ui_error_label(ui.mode, ui.monochrome));
-      exit_status = EXIT_TILE_PLACEMENT_ERROR;
-      break;
-    }
-
-    const char *feedback = NULL;
-
-    /* Each turn starts from a complete render of the current state. */
-    while (!interrupted) {
-      ui_print_header(seed, game.board_size, &ui);
-      ui_draw_game_board(&game, &ui);
-
-      if (game.status != GAME_RUNNING)
-        break;
-
-      enum command_action action_result = COMMAND_REPROMPT;
-
-      while (action_result == COMMAND_REPROMPT) {
-        enum player_command command = PLAYER_COMMAND_INVALID;
-        int input_status = ui_prompt_for_command(&ui, &command, &feedback);
-
-        if (input_status == COMMAND_READ_ERROR) {
-          fprintf(stderr, "\n%s Unable to read a command.\n",
-                  ui_error_label(ui.mode, ui.monochrome));
-          exit_status = EXIT_COMMAND_ERROR;
-          goto cleanup;
-        }
-
-        if (input_status == COMMAND_READ_EOF) {
-          action_result = COMMAND_QUIT;
-          break;
-        }
-
-        int previous_score = game_score(&game);
-        action_result = apply_player_command(&game, &ui, command, &feedback);
-
-        if (previous_score != ANSWER_SCORE &&
-            game_score(&game) == ANSWER_SCORE)
-          feedback = ui_answer_feedback(&ui);
-      }
-
-      if (action_result == COMMAND_SHOW_HELP) {
-        bool quit = false;
-        int input_status = ui_show_help(&ui, &quit);
-
-        if (input_status == COMMAND_READ_ERROR) {
-          fprintf(stderr, "\n%s Unable to read a command.\n",
-                  ui_error_label(ui.mode, ui.monochrome));
-          exit_status = EXIT_COMMAND_ERROR;
-          goto cleanup;
-        }
-
-        if (input_status == COMMAND_READ_EOF || quit)
-          action_result = COMMAND_QUIT;
-      }
-
-      if (action_result == COMMAND_QUIT)
-        break;
-    }
-
-    if (interrupted)
-      break;
-
-    if (game.status == GAME_RUNNING) {
-      printf("\n");
-      break;
-    }
-
-    enum replay_command replay = REPLAY_COMMAND_INVALID;
-    int input_status = ui_prompt_for_replay(&ui, game.status, &replay);
-
-    if (input_status == COMMAND_READ_ERROR) {
-      fprintf(stderr, "\n%s Unable to read a command.\n",
-              ui_error_label(ui.mode, ui.monochrome));
-      exit_status = EXIT_COMMAND_ERROR;
-      goto cleanup;
-    }
-
-    if (input_status == COMMAND_READ_EOF) {
-      replay = REPLAY_COMMAND_QUIT;
-    }
-
-    if (interrupted)
-      break;
-
-    if (replay == REPLAY_COMMAND_QUIT) {
-      printf("\n");
-      break;
-    }
-
-    game_destroy(&game);
-  }
-
-  if (interrupted)
-    exit_status = 128 + interrupted;
-
-cleanup:
-  ui_restore_terminal();
-
-  if (interrupted) {
-    ui_print_interrupted_exit(&ui);
-  }
-
-  game_destroy(&game);
-  return exit_status;
+  return app_run(&options);
 }

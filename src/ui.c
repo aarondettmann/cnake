@@ -1,14 +1,7 @@
 #include "ui.h"
 
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/select.h>
-#include <termios.h>
-#include <unistd.h>
 
 #define BOARD_STATUS_GAP_WIDTH 3
 #define STATUS_INNER_WIDTH 20
@@ -26,7 +19,6 @@
 #define CLEAR_SCREEN "\033[H\033[0J"
 #define CLEAR_LINE "\033[2K"
 #define CURSOR_UP_ONE_LINE "\033[1A"
-#define WARNING_LABEL_TEXT " ! Warning:"
 #define UNICODE_ERROR_LABEL_TEXT " × Error:"
 #define ASCII_ERROR_LABEL_TEXT " x Error:"
 
@@ -140,13 +132,6 @@ static const struct ui_theme ASCII_THEME = {
     .multiply = "x",
     .game_over_dash = "-",
 };
-
-static struct termios original_terminal;
-static bool terminal_initialized = false;
-static bool monochrome_output = false;
-static volatile sig_atomic_t *interrupted_flag = NULL;
-
-enum { COMMAND_READ_ESCAPE = 2 };
 
 static const struct ui_theme *theme_for_mode(enum ui_mode mode) {
   return mode == UI_MODE_ASCII ? &ASCII_THEME : &UNICODE_THEME;
@@ -290,11 +275,6 @@ void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
   ui->show_debug = false;
   ui->monochrome = monochrome;
   ui->mode = mode;
-  monochrome_output = monochrome;
-}
-
-void ui_set_interrupted_flag(volatile sig_atomic_t *interrupted) {
-  interrupted_flag = interrupted;
 }
 
 const char *ui_error_label(enum ui_mode mode, bool monochrome) {
@@ -307,208 +287,25 @@ const char *ui_error_label(enum ui_mode mode, bool monochrome) {
   }
 }
 
-static sig_atomic_t interrupted_value(void) {
-  return interrupted_flag != NULL ? *interrupted_flag : 0;
-}
-
-bool ui_initialize_terminal(void) {
-  if (!isatty(STDIN_FILENO))
-    return false;
-
-  if (tcgetattr(STDIN_FILENO, &original_terminal) == -1)
-    return false;
-
-  struct termios terminal = original_terminal;
-  terminal.c_lflag &= ~(ICANON | ECHO);
-  terminal.c_cc[VMIN] = 1;
-  terminal.c_cc[VTIME] = 0;
-
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) == -1)
-    return false;
-
-  terminal_initialized = true;
-  return true;
-}
-
-void ui_restore_terminal(void) {
-  if (!terminal_initialized)
-    return;
-
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal) == -1) {
-    const struct ui_style *style = style_for_monochrome(monochrome_output);
-    fprintf(stderr, "%s%s%s Unable to restore terminal settings.\n",
-            style->yellow, WARNING_LABEL_TEXT, style->reset);
-  }
-
-  terminal_initialized = false;
-}
-
-/*
- * Read one byte from standard input. A negative timeout blocks indefinitely.
- * Returns 1 for input, 0 for a timeout/end/interruption, and -1 for an error.
- */
-static int read_stdin_char(char *input, int timeout_ms) {
-  while (true) {
-    fd_set read_fds;
-    FD_ZERO(&read_fds);
-    FD_SET(STDIN_FILENO, &read_fds);
-
-    int ready;
-    if (timeout_ms < 0) {
-      ready = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, NULL);
-    } else {
-      struct timeval timeout = {
-          .tv_sec = timeout_ms / 1000,
-          .tv_usec = (timeout_ms % 1000) * 1000,
-      };
-      ready = select(STDIN_FILENO + 1, &read_fds, NULL, NULL, &timeout);
-    }
-
-    if (ready == 0)
-      return COMMAND_READ_EOF;
-
-    if (ready == -1) {
-      if (errno == EINTR) {
-        if (interrupted_value())
-          return COMMAND_READ_EOF;
-
-        continue;
-      }
-
-      return COMMAND_READ_ERROR;
-    }
-
-    ssize_t bytes_read = read(STDIN_FILENO, input, 1);
-    if (bytes_read == 1)
-      return COMMAND_READ_OK;
-
-    if (bytes_read == 0)
-      return COMMAND_READ_EOF;
-
-    if (errno == EINTR) {
-      if (interrupted_value())
-        return COMMAND_READ_EOF;
-
-      continue;
-    }
-
-    return COMMAND_READ_ERROR;
-  }
-}
-
-/*
- * Consume an unsupported terminal escape sequence without delaying normal
- * single-key commands.
- */
-static void discard_escape_sequence(void) {
-  char input;
-  int status = read_stdin_char(&input, 10);
-
-  if (status != COMMAND_READ_OK)
-    return;
-
-  if (input != '[' && input != 'O') {
-    while (read_stdin_char(&input, 5) == COMMAND_READ_OK)
-      ;
-
-    return;
-  }
-
-  do {
-    status = read_stdin_char(&input, 5);
-  } while (status == COMMAND_READ_OK && (input < '@' || input > '~'));
-}
-
-/*
- * Read the next non-newline command byte. Return value 2 means that an escape
- * sequence was consumed and the caller should prompt again.
- */
-static int read_command_char(char *input) {
-  int status;
-
-  do {
-    status = read_stdin_char(input, -1);
-    if (status != COMMAND_READ_OK)
-      return status;
-  } while (*input == '\n' || *input == '\r');
-
-  if (*input == '\033') {
-    discard_escape_sequence();
-    return COMMAND_READ_ESCAPE;
-  }
-
-  return COMMAND_READ_OK;
-}
-
-enum board_size_parse_status ui_parse_board_size(const char *input,
-                                                 int *board_size) {
-  char *end;
-
-  errno = 0;
-  long parsed_size = strtol(input, &end, 10);
-
-  if (errno != 0 || end == input)
-    return BOARD_SIZE_INVALID;
-
-  while (*end != '\0' && isspace((unsigned char)*end))
-    end++;
-
-  if (*end != '\0')
-    return BOARD_SIZE_INVALID;
-
-  if (parsed_size < MIN_BOARD_SIZE || parsed_size > MAX_BOARD_SIZE)
-    return BOARD_SIZE_OUT_OF_RANGE;
-
-  *board_size = (int)parsed_size;
-  return BOARD_SIZE_VALID;
-}
-
-int ui_prompt_for_board_size(const struct ui_state *ui, int *board_size) {
+void ui_render_board_size_prompt(const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
 
-  while (true) {
-    print_command_prompt(theme, style);
-    printf("Board size [%d-%d] %s(default %d)%s: ", MIN_BOARD_SIZE,
-           MAX_BOARD_SIZE, style->dim, DEFAULT_BOARD_SIZE, style->reset);
-    fflush(stdout);
+  print_command_prompt(theme, style);
+  printf("Board size [%d-%d] %s(default %d)%s: ", MIN_BOARD_SIZE,
+         MAX_BOARD_SIZE, style->dim, DEFAULT_BOARD_SIZE, style->reset);
+  fflush(stdout);
+}
 
-    char input[32];
-    if (!fgets(input, sizeof(input), stdin)) {
-      if (interrupted_value()) {
-        putchar('\n');
-        return 128 + interrupted_value();
-      }
-
-      return 1;
-    }
-
-    if (strchr(input, '\n') == NULL) {
-      int discarded;
-      while ((discarded = getchar()) != '\n' && discarded != EOF)
-        ;
-    }
-
-    if (input[0] == '\n') {
-      *board_size = DEFAULT_BOARD_SIZE;
-      return 0;
-    }
-
-    enum board_size_parse_status status =
-        ui_parse_board_size(input, board_size);
-
-    if (status == BOARD_SIZE_VALID)
-      return 0;
-
-    if (status == BOARD_SIZE_INVALID) {
-      printf("%s Enter a number from %d to %d, or press Enter for %d.\n",
-             ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
-             MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
-    } else {
-      printf("%s Board size must be between %d and %d.\n",
-             ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
-             MAX_BOARD_SIZE);
-    }
+void ui_print_board_size_error(const struct ui_state *ui, bool out_of_range) {
+  if (out_of_range) {
+    printf("%s Board size must be between %d and %d.\n",
+           ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
+           MAX_BOARD_SIZE);
+  } else {
+    printf("%s Enter a number from %d to %d, or press Enter for %d.\n",
+           ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
+           MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
   }
 }
 
@@ -784,50 +581,27 @@ static void print_help(const struct ui_state *ui) {
   printf("%s\n%s", theme->bottom_right, style->reset);
 }
 
-static enum player_command parse_player_command(char input) {
-  switch (input) {
-  case 'k':
-    return PLAYER_COMMAND_MOVE_UP;
-  case 'j':
-    return PLAYER_COMMAND_MOVE_DOWN;
-  case 'h':
-    return PLAYER_COMMAND_MOVE_LEFT;
-  case 'l':
-    return PLAYER_COMMAND_MOVE_RIGHT;
-  case '?':
-    return PLAYER_COMMAND_HELP;
-  case 'v':
-    return PLAYER_COMMAND_TOGGLE_DEBUG;
-  case 'c':
-    return PLAYER_COMMAND_GROW;
-  case 'q':
-    return PLAYER_COMMAND_QUIT;
-  default:
-    return PLAYER_COMMAND_INVALID;
-  }
-}
-
-enum input_prompt {
-  INPUT_PROMPT_COMMAND = 0,
-  INPUT_PROMPT_REPLAY,
-  INPUT_PROMPT_HELP,
+enum ui_prompt {
+  UI_PROMPT_COMMAND = 0,
+  UI_PROMPT_REPLAY,
+  UI_PROMPT_HELP,
 };
 
-enum input_message {
-  INPUT_MESSAGE_NONE = 0,
-  INPUT_MESSAGE_FEEDBACK,
-  INPUT_MESSAGE_GAME_STATUS,
-  INPUT_MESSAGE_INVALID_COMMAND,
+enum ui_message {
+  UI_MESSAGE_NONE = 0,
+  UI_MESSAGE_FEEDBACK,
+  UI_MESSAGE_GAME_STATUS,
+  UI_MESSAGE_INVALID_COMMAND,
 };
 
-static void print_input_prompt(enum input_prompt prompt,
+static void print_input_prompt(enum ui_prompt prompt,
                                const struct ui_theme *theme,
                                const struct ui_style *style) {
   print_command_prompt(theme, style);
 
-  if (prompt == INPUT_PROMPT_COMMAND) {
+  if (prompt == UI_PROMPT_COMMAND) {
     printf("Command %s[?]%s: ", style->dim, style->reset);
-  } else if (prompt == INPUT_PROMPT_REPLAY) {
+  } else if (prompt == UI_PROMPT_REPLAY) {
     printf("Retry %s[r]%s / Quit %s[q]%s: ", style->dim, style->reset,
            style->dim, style->reset);
   } else {
@@ -841,8 +615,7 @@ static void print_input_prompt(enum input_prompt prompt,
  * message row and replace both rows instead of appending terminal output.
  */
 static void render_input_area(const struct ui_state *ui,
-                              enum input_prompt prompt,
-                              enum input_message message,
+                              enum ui_prompt prompt, enum ui_message message,
                               const char *feedback, enum game_status status,
                               bool replace) {
   const struct ui_theme *theme = theme_for_ui(ui);
@@ -854,21 +627,21 @@ static void render_input_area(const struct ui_state *ui,
   printf("\r%s", CLEAR_LINE);
 
   switch (message) {
-  case INPUT_MESSAGE_FEEDBACK:
+  case UI_MESSAGE_FEEDBACK:
     printf("%s", feedback);
     break;
-  case INPUT_MESSAGE_GAME_STATUS:
+  case UI_MESSAGE_GAME_STATUS:
     print_game_status_message(status, ui);
     break;
-  case INPUT_MESSAGE_INVALID_COMMAND:
+  case UI_MESSAGE_INVALID_COMMAND:
     printf("%s %s%s ", style->red,
            ui->mode == UI_MODE_ASCII ? "x" : "×", style->reset);
-    if (prompt == INPUT_PROMPT_COMMAND)
+    if (prompt == UI_PROMPT_COMMAND)
       printf("Unknown command. Press ? for help.");
     else
       printf("Choose r to retry or q to quit.");
     break;
-  case INPUT_MESSAGE_NONE:
+  case UI_MESSAGE_NONE:
     break;
   }
 
@@ -877,89 +650,36 @@ static void render_input_area(const struct ui_state *ui,
   fflush(stdout);
 }
 
-/*
- * Display one-shot feedback, prompt for a command, and translate a successfully
- * read byte into a semantic player command.
- */
-int ui_prompt_for_command(const struct ui_state *ui,
-                          enum player_command *command, const char **feedback) {
-  enum input_message message =
-      *feedback == NULL ? INPUT_MESSAGE_NONE : INPUT_MESSAGE_FEEDBACK;
+void ui_render_command_prompt(const struct ui_state *ui, const char *feedback,
+                              bool invalid, bool replace) {
+  enum ui_message message = UI_MESSAGE_NONE;
 
-  render_input_area(ui, INPUT_PROMPT_COMMAND, message, *feedback, GAME_RUNNING,
-                    false);
-  *feedback = NULL;
+  if (feedback != NULL)
+    message = UI_MESSAGE_FEEDBACK;
+  else if (invalid)
+    message = UI_MESSAGE_INVALID_COMMAND;
 
-  while (true) {
-    char input;
-    int status = read_command_char(&input);
-
-    if (status == COMMAND_READ_ESCAPE)
-      continue;
-
-    if (status != COMMAND_READ_OK)
-      return status;
-
-    *command = parse_player_command(input);
-    if (*command != PLAYER_COMMAND_INVALID)
-      return COMMAND_READ_OK;
-
-    render_input_area(ui, INPUT_PROMPT_COMMAND,
-                      INPUT_MESSAGE_INVALID_COMMAND, NULL, GAME_RUNNING, true);
-  }
+  render_input_area(ui, UI_PROMPT_COMMAND, message, feedback, GAME_RUNNING,
+                    replace);
 }
 
-int ui_prompt_for_replay(const struct ui_state *ui, enum game_status game_status,
-                         enum replay_command *command) {
-  render_input_area(ui, INPUT_PROMPT_REPLAY, INPUT_MESSAGE_GAME_STATUS, NULL,
-                    game_status, false);
+void ui_render_replay_prompt(const struct ui_state *ui,
+                             enum game_status game_status, bool invalid,
+                             bool replace) {
+  enum ui_message message =
+      invalid ? UI_MESSAGE_INVALID_COMMAND : UI_MESSAGE_GAME_STATUS;
 
-  while (true) {
-    char input;
-    int status = read_command_char(&input);
-
-    if (status == COMMAND_READ_ESCAPE)
-      continue;
-
-    if (status != COMMAND_READ_OK)
-      return status;
-
-    if (input == 'r')
-      *command = REPLAY_COMMAND_RETRY;
-    else if (input == 'q')
-      *command = REPLAY_COMMAND_QUIT;
-    else {
-      render_input_area(ui, INPUT_PROMPT_REPLAY,
-                        INPUT_MESSAGE_INVALID_COMMAND, NULL, GAME_RUNNING,
-                        true);
-      continue;
-    }
-
-    return COMMAND_READ_OK;
-  }
+  render_input_area(ui, UI_PROMPT_REPLAY, message, NULL, game_status, replace);
 }
 
-int ui_show_help(const struct ui_state *ui, bool *quit) {
+void ui_render_help(const struct ui_state *ui) {
   printf("%s", CLEAR_SCREEN);
   print_help(ui);
-  render_input_area(ui, INPUT_PROMPT_HELP, INPUT_MESSAGE_NONE, NULL,
-                    GAME_RUNNING, false);
+}
 
-  while (true) {
-    char input;
-    int status = read_stdin_char(&input, -1);
-
-    if (status != COMMAND_READ_OK)
-      return status;
-
-    if (input == '\033') {
-      discard_escape_sequence();
-      continue;
-    }
-
-    *quit = input == 'q';
-    return COMMAND_READ_OK;
-  }
+void ui_render_help_prompt(const struct ui_state *ui) {
+  render_input_area(ui, UI_PROMPT_HELP, UI_MESSAGE_NONE, NULL, GAME_RUNNING,
+                    false);
 }
 
 const char *ui_toggle_debug(struct ui_state *ui) {
@@ -986,7 +706,7 @@ const char *ui_answer_feedback(const struct ui_state *ui) {
   if (ui->mode == UI_MODE_ASCII)
     return ui->monochrome
                ? " + The answer is snake."
-               : COLOR_YELLOW " * " STYLE_RESET "The answer is snake.";
+               : COLOR_YELLOW " + " STYLE_RESET "The answer is snake.";
 
   return ui->monochrome
              ? " ★ The answer is snake."
