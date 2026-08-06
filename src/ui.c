@@ -16,7 +16,9 @@
 #define STYLE_DIM "\x1B[2m"
 #define STYLE_RESET "\033[0m"
 
-#define CLEAR_SCREEN "\033[H\033[0J"
+#define CURSOR_HOME "\033[H"
+#define CLEAR_TO_SCREEN_END "\033[0J"
+#define CLEAR_TO_LINE_END "\033[0K"
 #define CLEAR_LINE "\033[2K"
 #define CURSOR_UP_ONE_LINE "\033[1A"
 #define UNICODE_ERROR_LABEL_TEXT " × Error:"
@@ -153,6 +155,8 @@ static void print_repeated(const char *text, int count) {
   for (int index = 0; index < count; index++)
     printf("%s", text);
 }
+
+static void finish_line(void) { printf("%s\n", CLEAR_TO_LINE_END); }
 
 static void print_command_prompt(const struct ui_theme *theme,
                                  const struct ui_style *style) {
@@ -309,6 +313,8 @@ void ui_print_board_size_error(const struct ui_state *ui, bool out_of_range) {
   }
 }
 
+void ui_begin_frame(void) { printf("%s", CURSOR_HOME); }
+
 static const char *head_glyph(enum direction direction,
                               const struct ui_theme *theme) {
   switch (direction) {
@@ -341,7 +347,7 @@ void ui_print_header(unsigned int seed, int board_size,
   int left_fill = fill_width / 2;
   int right_fill = fill_width - left_fill;
 
-  printf("%s%s %s", CLEAR_SCREEN, style->cyan, theme->top_left);
+  printf("%s %s", style->cyan, theme->top_left);
   print_repeated(theme->horizontal, left_fill);
 
   printf(" %s", style->green);
@@ -352,9 +358,14 @@ void ui_print_header(unsigned int seed, int board_size,
          style->cyan);
 
   print_repeated(theme->horizontal, right_fill);
-  printf("%s\n %s", theme->top_right, theme->bottom_left);
+  printf("%s", theme->top_right);
+  finish_line();
+  printf(" %s", theme->bottom_left);
   print_repeated(theme->horizontal, header_inner_width);
-  printf("%s\n\n%s", theme->bottom_right, style->reset);
+  printf("%s", theme->bottom_right);
+  finish_line();
+  printf("%s", style->reset);
+  finish_line();
 }
 
 static void draw_border(int board_size, bool bottom,
@@ -484,7 +495,8 @@ void ui_draw_game_board(const struct game_state *game,
                     style);
   }
 
-  printf("\n%s", style->reset);
+  finish_line();
+  printf("%s", style->reset);
 
   for (int y = 0; y < game->board_size; y++) {
     printf("%s%s %s %s", style->dim, style->cyan, theme->vertical,
@@ -500,7 +512,7 @@ void ui_draw_game_board(const struct game_state *game,
       print_debug_row(game, y, debug_value_width, debug_inner_width, theme,
                       style);
 
-    printf("\n");
+    finish_line();
   }
 
   draw_border(game->board_size, true, theme, style);
@@ -512,7 +524,8 @@ void ui_draw_game_board(const struct game_state *game,
     print_panel_bottom(debug_inner_width, theme, style);
   }
 
-  printf("\n%s", style->reset);
+  printf("%s", style->reset);
+  finish_line();
 }
 
 static void print_game_status_message(enum game_status status,
@@ -546,8 +559,9 @@ static void print_game_status_message(enum game_status status,
 static void print_help_option(const struct ui_theme *theme, const char *command,
                               const char *description,
                               const struct ui_style *style) {
-  printf(" %s %s%-2s%s%-27s%s%s\n", theme->vertical, style->yellow, command,
+  printf(" %s %s%-2s%s%-27s%s%s", theme->vertical, style->yellow, command,
          style->reset, description, style->cyan, theme->vertical);
+  finish_line();
 }
 
 static void print_help(const struct ui_state *ui) {
@@ -558,27 +572,33 @@ static void print_help(const struct ui_state *ui) {
   print_repeated(theme->horizontal, 10);
   printf(" CONTROLS ");
   print_repeated(theme->horizontal, 10);
-  printf("%s\n", theme->top_right);
-  printf(" %s %s          %sk%s %s%s                %s%s\n", theme->vertical,
+  printf("%s", theme->top_right);
+  finish_line();
+  printf(" %s %s          %sk%s %s%s                %s%s", theme->vertical,
          style->reset, style->yellow, style->green, theme->head_up,
          style->reset, style->cyan, theme->vertical);
-  printf(" %s %s      %sh%s %s     %s %sl%s            %s%s\n",
+  finish_line();
+  printf(" %s %s      %sh%s %s     %s %sl%s            %s%s",
          theme->vertical, style->reset, style->yellow, style->green,
          theme->head_left, theme->head_right, style->yellow, style->reset,
          style->cyan, theme->vertical);
-  printf(" %s %s          %sj%s %s%s                %s%s\n", theme->vertical,
+  finish_line();
+  printf(" %s %s          %sj%s %s%s                %s%s", theme->vertical,
          style->reset, style->yellow, style->green, theme->head_down,
          style->reset, style->cyan, theme->vertical);
+  finish_line();
   printf(" %s", theme->middle_left);
   print_repeated(theme->horizontal, 30);
-  printf("%s\n", theme->middle_right);
+  printf("%s", theme->middle_right);
+  finish_line();
   print_help_option(theme, "?", "Show help", style);
   print_help_option(theme, "v", "Toggle debug view", style);
   print_help_option(theme, "c", "Add five segments", style);
   print_help_option(theme, "q", "Quit", style);
   printf(" %s", theme->bottom_left);
   print_repeated(theme->horizontal, 30);
-  printf("%s\n%s", theme->bottom_right, style->reset);
+  printf("%s%s", theme->bottom_right, style->reset);
+  finish_line();
 }
 
 enum ui_prompt {
@@ -647,6 +667,7 @@ static void render_input_area(const struct ui_state *ui,
 
   printf("\r\n%s\r", CLEAR_LINE);
   print_input_prompt(prompt, theme, style);
+  printf("%s", CLEAR_TO_SCREEN_END);
   fflush(stdout);
 }
 
@@ -673,7 +694,7 @@ void ui_render_replay_prompt(const struct ui_state *ui,
 }
 
 void ui_render_help(const struct ui_state *ui) {
-  printf("%s", CLEAR_SCREEN);
+  ui_begin_frame();
   print_help(ui);
 }
 
