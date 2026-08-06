@@ -21,12 +21,14 @@ struct terminal_state {
   struct termios original;
   volatile sig_atomic_t *interrupted;
   bool initialized;
+  bool screen_active;
   bool monochrome;
 };
 
 void terminal_initialize_state(struct terminal_state *terminal,
                                volatile sig_atomic_t *interrupted,
                                bool monochrome);
+bool terminal_enter_screen(struct terminal_state *terminal);
 bool terminal_initialize(struct terminal_state *terminal);
 void terminal_restore(struct terminal_state *terminal);
 enum terminal_read_status terminal_read_key(struct terminal_state *terminal,

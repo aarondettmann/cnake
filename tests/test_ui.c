@@ -381,13 +381,42 @@ static void test_monochrome_suppresses_sgr(void) {
   char *output = capture_ui_output(&game, &ui, CAPTURE_ALL);
   CHECK(output != NULL);
   if (output != NULL) {
-    CHECK(strstr(output, "\x1B[H\x1B[0J") != NULL);
+    CHECK(strstr(output, "\x1B[H") != NULL);
+    CHECK(strstr(output, "\x1B[H\x1B[0J") == NULL);
+    CHECK(strstr(output, "\x1B[0K\n") != NULL);
     CHECK(!has_ansi_sgr(output));
     CHECK(strstr(output, " x Error:") != NULL);
     CHECK(strstr(output, " * Debug view on.") != NULL);
     CHECK(strstr(output, " ! Length +5.") != NULL);
     CHECK(strstr(output, " + The answer is snake.") != NULL);
     free(output);
+  }
+
+  game_destroy(&game);
+}
+
+static void test_rendered_rows_clear_stale_suffixes(void) {
+  struct game_state game;
+  if (!create_empty_game(&game, 6))
+    return;
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_ASCII, true);
+
+  char *board_output = capture_ui_output(&game, &ui, CAPTURE_BOARD);
+  CHECK(board_output != NULL);
+  if (board_output != NULL) {
+    CHECK_EQ(count_occurrences(board_output, "\033[0K\n"),
+             game.board_size + 5);
+    CHECK(strstr(board_output, "\033[H\033[0J") == NULL);
+    free(board_output);
+  }
+
+  char *message_output = capture_ui_output(&game, &ui, CAPTURE_MESSAGES);
+  CHECK(message_output != NULL);
+  if (message_output != NULL) {
+    CHECK_EQ(count_occurrences(message_output, "\033[0K\n"), 10);
+    free(message_output);
   }
 
   game_destroy(&game);
@@ -480,6 +509,7 @@ int main(void) {
   test_unicode_theme_strings();
   test_answer_score_is_yellow();
   test_monochrome_suppresses_sgr();
+  test_rendered_rows_clear_stale_suffixes();
   test_debug_panel_matches_main_layout();
   test_unicode_debug_header_alignment();
 

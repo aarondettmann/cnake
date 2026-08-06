@@ -13,6 +13,8 @@
 
 #define ANSWER_SCORE 42
 
+static const int TERMINATION_SIGNALS[] = {SIGINT, SIGTERM, SIGHUP, SIGQUIT};
+
 enum command_action {
   COMMAND_REPROMPT = 0,
   COMMAND_QUIT,
@@ -24,11 +26,37 @@ static volatile sig_atomic_t interrupted = 0;
 
 static void handle_signal(int signal_number) { interrupted = signal_number; }
 
-static bool install_signal_handler(void) {
+struct signal_handler_state {
+  struct sigaction previous[sizeof(TERMINATION_SIGNALS) /
+                            sizeof(*TERMINATION_SIGNALS)];
+  size_t installed;
+};
+
+static void restore_signal_handlers(struct signal_handler_state *state) {
+  while (state->installed > 0) {
+    state->installed--;
+    sigaction(TERMINATION_SIGNALS[state->installed],
+              &state->previous[state->installed], NULL);
+  }
+}
+
+static bool install_signal_handlers(struct signal_handler_state *state) {
   struct sigaction action = {0};
   action.sa_handler = handle_signal;
   sigemptyset(&action.sa_mask);
-  return sigaction(SIGINT, &action, NULL) != -1;
+
+  for (size_t index = 0;
+       index < sizeof(TERMINATION_SIGNALS) / sizeof(*TERMINATION_SIGNALS);
+       index++) {
+    if (sigaction(TERMINATION_SIGNALS[index], &action,
+                  &state->previous[index]) == -1) {
+      restore_signal_handlers(state);
+      return false;
+    }
+    state->installed++;
+  }
+
+  return true;
 }
 
 static void print_error(const struct ui_state *ui, const char *message) {
@@ -178,6 +206,7 @@ static enum command_action play_game(struct game_state *game,
   const char *feedback = NULL;
 
   while (!interrupted) {
+    ui_begin_frame();
     ui_print_header(seed, game->board_size, ui);
     ui_draw_game_board(game, ui);
 
@@ -270,6 +299,7 @@ int app_run(const struct cli_options *options) {
   struct game_state game;
   struct ui_state ui;
   struct terminal_state terminal;
+  struct signal_handler_state signal_handlers = {0};
   int board_size = 0;
   int exit_status = APP_EXIT_OK;
   unsigned int seed =
@@ -281,7 +311,7 @@ int app_run(const struct cli_options *options) {
                       options->monochrome);
   terminal_initialize_state(&terminal, &interrupted, options->monochrome);
 
-  if (!install_signal_handler()) {
+  if (!install_signal_handlers(&signal_handlers)) {
     print_error(&ui, "Unable to install signal handler.");
     return APP_EXIT_TERMINAL_ERROR;
   }
@@ -289,10 +319,16 @@ int app_run(const struct cli_options *options) {
   bool valid_board_size =
       options->board_size != NULL &&
       cli_parse_board_size(options->board_size, &board_size) == BOARD_SIZE_VALID;
-  ui_print_header(seed, valid_board_size ? board_size : DEFAULT_BOARD_SIZE,
-                  &ui);
+
+  if (!terminal_enter_screen(&terminal)) {
+    print_error(&ui, "Unable to initialize terminal screen.");
+    exit_status = APP_EXIT_TERMINAL_ERROR;
+    goto cleanup;
+  }
 
   if (!valid_board_size) {
+    ui_begin_frame();
+    ui_print_header(seed, DEFAULT_BOARD_SIZE, &ui);
     exit_status = prompt_for_board_size(&ui, &board_size);
     if (exit_status != APP_EXIT_OK)
       goto cleanup;
@@ -313,5 +349,6 @@ cleanup:
     ui_print_interrupted_exit(&ui);
   }
   game_destroy(&game);
+  restore_signal_handlers(&signal_handlers);
   return exit_status;
 }

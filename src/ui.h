@@ -26,6 +26,7 @@ void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
 const char *ui_error_label(enum ui_mode mode, bool monochrome);
 void ui_render_board_size_prompt(const struct ui_state *ui);
 void ui_print_board_size_error(const struct ui_state *ui, bool out_of_range);
+void ui_begin_frame(void);
 void ui_print_header(unsigned int seed, int board_size,
                      const struct ui_state *ui);
 void ui_draw_game_board(const struct game_state *game,
