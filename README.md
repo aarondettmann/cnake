@@ -47,7 +47,7 @@ This prints:
 ```
 Usage: ./cnake [board-size] [options]
 
-Play Cnake with a board size from 4 to 10 (default 6).
+Play Cnake with a board size from 4 to 10 (default 5).
 
 Options:
   --help        Display this help and exit

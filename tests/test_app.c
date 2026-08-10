@@ -183,8 +183,8 @@ static void test_valid_size_requires_a_terminal(void) {
   free_result(&result);
 }
 
-static void test_board_size_eof(void) {
-  struct cli_options options = test_options(NULL);
+static void test_invalid_size_is_rejected(void) {
+  struct cli_options options = test_options("3");
   struct app_result result = {0};
 
   bool ran = run_app(&options, "", &result);
@@ -192,23 +192,9 @@ static void test_board_size_eof(void) {
   if (!ran)
     return;
   CHECK_EQ(result.exit_status, APP_EXIT_INPUT_ERROR);
-  CHECK(strstr(result.output, "Board size [4-10]") != NULL);
-  CHECK(result.error[0] == '\0');
-
-  free_result(&result);
-}
-
-static void test_board_size_retry(void) {
-  struct cli_options options = test_options(NULL);
-  struct app_result result = {0};
-
-  bool ran = run_app(&options, "3\n6\n", &result);
-  CHECK(ran);
-  if (!ran)
-    return;
-  CHECK_EQ(result.exit_status, APP_EXIT_TERMINAL_ERROR);
-  CHECK(strstr(result.output, "Board size must be between 4 and 10.") != NULL);
-  CHECK(strstr(result.error, "Unable to enable direct input mode.") != NULL);
+  CHECK(result.output[0] == '\0');
+  CHECK(strstr(result.error, "Board size must be a number from 4 to 10.") !=
+        NULL);
 
   free_result(&result);
 }
@@ -376,8 +362,7 @@ static void test_signal_restores_terminal(int signal_number) {
 
 int main(void) {
   test_valid_size_requires_a_terminal();
-  test_board_size_eof();
-  test_board_size_retry();
+  test_invalid_size_is_rejected();
   test_quit_restores_terminal();
   test_signal_restores_terminal(SIGINT);
   test_signal_restores_terminal(SIGTERM);

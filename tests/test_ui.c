@@ -33,9 +33,6 @@ static void render_messages(struct ui_state *ui) {
   printf("%s\n", ui_grow_feedback(ui));
   printf("%s\n", ui_answer_feedback(ui));
 
-  ui_render_board_size_prompt(ui);
-  printf("\n");
-
   ui_render_help(ui);
   ui_render_help_prompt(ui);
   printf("\n");
@@ -282,7 +279,6 @@ static void test_ascii_messages(void) {
     if (plain_output != NULL) {
       CHECK(strstr(plain_output, "+ The answer is snake.") != NULL);
       CHECK(strstr(plain_output, "+---------- CONTROLS ----------+") != NULL);
-      CHECK(strstr(plain_output, " > Board size") != NULL);
       CHECK(strstr(plain_output, "Show help") != NULL);
       CHECK(strstr(plain_output, "Toggle debug view") != NULL);
       CHECK(strstr(plain_output, "Add five segments") != NULL);

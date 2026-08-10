@@ -8,7 +8,7 @@
 
 #include <stdbool.h>
 
-#define DEFAULT_BOARD_SIZE 6
+#define DEFAULT_BOARD_SIZE 5
 #define MIN_BOARD_SIZE 4
 #define MAX_BOARD_SIZE 10
 
