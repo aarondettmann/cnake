@@ -8,7 +8,6 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
 #define ANSWER_SCORE 42
@@ -69,37 +68,10 @@ static void print_command_error(const struct ui_state *ui) {
           ui_error_label(ui->mode, ui->monochrome));
 }
 
-static int prompt_for_board_size(const struct ui_state *ui, int *board_size) {
-  while (true) {
-    char input[32];
-    ui_render_board_size_prompt(ui);
-
-    if (fgets(input, sizeof(input), stdin) == NULL) {
-      if (interrupted) {
-        putchar('\n');
-        return 128 + interrupted;
-      }
-      return APP_EXIT_INPUT_ERROR;
-    }
-
-    if (strchr(input, '\n') == NULL) {
-      int discarded;
-      while ((discarded = getchar()) != '\n' && discarded != EOF)
-        ;
-    }
-
-    if (input[0] == '\n') {
-      *board_size = DEFAULT_BOARD_SIZE;
-      return APP_EXIT_OK;
-    }
-
-    enum board_size_parse_status status =
-        cli_parse_board_size(input, board_size);
-    if (status == BOARD_SIZE_VALID)
-      return APP_EXIT_OK;
-
-    ui_print_board_size_error(ui, status == BOARD_SIZE_OUT_OF_RANGE);
-  }
+static void print_board_size_error(const struct ui_state *ui) {
+  fprintf(stderr, "%s Board size must be a number from %d to %d.\n",
+          ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
+          MAX_BOARD_SIZE);
 }
 
 static enum command_action
@@ -300,7 +272,7 @@ int app_run(const struct cli_options *options) {
   struct ui_state ui;
   struct terminal_state terminal;
   struct signal_handler_state signal_handlers = {0};
-  int board_size = 0;
+  int board_size = DEFAULT_BOARD_SIZE;
   int exit_status = APP_EXIT_OK;
   unsigned int seed =
       options->seed_provided ? options->seed : (unsigned int)time(NULL);
@@ -311,27 +283,22 @@ int app_run(const struct cli_options *options) {
                       options->monochrome);
   terminal_initialize_state(&terminal, &interrupted, options->monochrome);
 
+  if (options->board_size != NULL &&
+      cli_parse_board_size(options->board_size, &board_size) !=
+          BOARD_SIZE_VALID) {
+    print_board_size_error(&ui);
+    return APP_EXIT_INPUT_ERROR;
+  }
+
   if (!install_signal_handlers(&signal_handlers)) {
     print_error(&ui, "Unable to install signal handler.");
     return APP_EXIT_TERMINAL_ERROR;
   }
 
-  bool valid_board_size =
-      options->board_size != NULL &&
-      cli_parse_board_size(options->board_size, &board_size) == BOARD_SIZE_VALID;
-
   if (!terminal_enter_screen(&terminal)) {
     print_error(&ui, "Unable to initialize terminal screen.");
     exit_status = APP_EXIT_TERMINAL_ERROR;
     goto cleanup;
-  }
-
-  if (!valid_board_size) {
-    ui_begin_frame();
-    ui_print_header(seed, DEFAULT_BOARD_SIZE, &ui);
-    exit_status = prompt_for_board_size(&ui, &board_size);
-    if (exit_status != APP_EXIT_OK)
-      goto cleanup;
   }
 
   if (!terminal_initialize(&terminal)) {

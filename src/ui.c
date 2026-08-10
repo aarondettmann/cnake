@@ -291,28 +291,6 @@ const char *ui_error_label(enum ui_mode mode, bool monochrome) {
   }
 }
 
-void ui_render_board_size_prompt(const struct ui_state *ui) {
-  const struct ui_theme *theme = theme_for_ui(ui);
-  const struct ui_style *style = style_for_ui(ui);
-
-  print_command_prompt(theme, style);
-  printf("Board size [%d-%d] %s(default %d)%s: ", MIN_BOARD_SIZE,
-         MAX_BOARD_SIZE, style->dim, DEFAULT_BOARD_SIZE, style->reset);
-  fflush(stdout);
-}
-
-void ui_print_board_size_error(const struct ui_state *ui, bool out_of_range) {
-  if (out_of_range) {
-    printf("%s Board size must be between %d and %d.\n",
-           ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
-           MAX_BOARD_SIZE);
-  } else {
-    printf("%s Enter a number from %d to %d, or press Enter for %d.\n",
-           ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
-           MAX_BOARD_SIZE, DEFAULT_BOARD_SIZE);
-  }
-}
-
 void ui_begin_frame(void) { printf("%s", CURSOR_HOME); }
 
 static const char *head_glyph(enum direction direction,
