@@ -490,7 +490,8 @@ static void test_unicode_debug_header_alignment(void) {
     CHECK(line_contains_both(plain_output, " STATUS · 4×4 ", " DEBUG "));
     CHECK(strstr(plain_output, " DEBUG · 4×4 ") == NULL);
     CHECK(strstr(plain_output, "★   Score       97") != NULL);
-    CHECK(strstr(plain_output, "▣   Obstacle") == NULL);
+    /* The status panel keeps all its rows on boards shorter than the panel. */
+    CHECK(strstr(plain_output, "▣   Obstacle") != NULL);
   }
 
   free(plain_output);

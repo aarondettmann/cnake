@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
@@ -67,12 +68,11 @@ static void test_state_initialization(void) {
   volatile sig_atomic_t interrupted = SIGINT;
   struct terminal_state terminal;
 
-  terminal_initialize_state(&terminal, &interrupted, true);
+  terminal_initialize_state(&terminal, &interrupted);
 
   CHECK(terminal.interrupted == &interrupted);
   CHECK(!terminal.initialized);
   CHECK(!terminal.screen_active);
-  CHECK(terminal.monochrome);
 }
 
 static void test_screen_lifecycle_without_input_mode(void) {
@@ -86,10 +86,11 @@ static void test_screen_lifecycle_without_input_mode(void) {
 
   int saved_stdout = dup(STDOUT_FILENO);
   CHECK(saved_stdout != -1);
+  fflush(stdout);
   CHECK(dup2(slave, STDOUT_FILENO) != -1);
 
   struct terminal_state terminal;
-  terminal_initialize_state(&terminal, NULL, true);
+  terminal_initialize_state(&terminal, NULL);
   CHECK(terminal_enter_screen(&terminal));
   CHECK(!terminal.initialized);
   CHECK(terminal.screen_active);
@@ -99,7 +100,7 @@ static void test_screen_lifecycle_without_input_mode(void) {
   CHECK_EQ(bytes_read, (ssize_t)strlen(enter_screen));
   CHECK(memcmp(screen_output, enter_screen, strlen(enter_screen)) == 0);
 
-  terminal_restore(&terminal);
+  CHECK(terminal_restore(&terminal) == TERMINAL_RESTORE_OK);
   CHECK(!terminal.initialized);
   CHECK(!terminal.screen_active);
 
@@ -130,11 +131,12 @@ static void test_terminal_lifecycle(void) {
   int saved_stdout = dup(STDOUT_FILENO);
   CHECK(saved_stdin != -1);
   CHECK(saved_stdout != -1);
+  fflush(stdout);
   CHECK(dup2(slave, STDIN_FILENO) != -1);
   CHECK(dup2(slave, STDOUT_FILENO) != -1);
 
   struct terminal_state terminal;
-  terminal_initialize_state(&terminal, NULL, true);
+  terminal_initialize_state(&terminal, NULL);
   CHECK(terminal_enter_screen(&terminal));
   CHECK(!terminal.initialized);
   CHECK(terminal.screen_active);
@@ -154,7 +156,7 @@ static void test_terminal_lifecycle(void) {
   CHECK_EQ(raw.c_cc[VMIN], 1);
   CHECK_EQ(raw.c_cc[VTIME], 0);
 
-  terminal_restore(&terminal);
+  CHECK(terminal_restore(&terminal) == TERMINAL_RESTORE_OK);
   CHECK(!terminal.initialized);
   CHECK(!terminal.screen_active);
 
@@ -169,7 +171,7 @@ static void test_terminal_lifecycle(void) {
   CHECK_EQ(restored.c_cc[VMIN], original.c_cc[VMIN]);
   CHECK_EQ(restored.c_cc[VTIME], original.c_cc[VTIME]);
 
-  terminal_restore(&terminal);
+  (void)terminal_restore(&terminal);
   restore_stdin(saved_stdin);
   CHECK(dup2(saved_stdout, STDOUT_FILENO) != -1);
   close(saved_stdout);
@@ -184,7 +186,7 @@ static void test_command_reading(void) {
     return;
 
   struct terminal_state terminal;
-  terminal_initialize_state(&terminal, NULL, true);
+  terminal_initialize_state(&terminal, NULL);
   char input;
   CHECK_EQ(terminal_read_command_key(&terminal, &input),
            TERMINAL_READ_ESCAPE);
@@ -202,7 +204,7 @@ static void test_help_reading(void) {
     return;
 
   struct terminal_state terminal;
-  terminal_initialize_state(&terminal, NULL, true);
+  terminal_initialize_state(&terminal, NULL);
   char input;
   CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_ESCAPE);
   CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_OK);

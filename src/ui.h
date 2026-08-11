@@ -24,6 +24,7 @@ struct ui_state {
 void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
                          bool monochrome);
 const char *ui_error_label(enum ui_mode mode, bool monochrome);
+const char *ui_warning_label(bool monochrome);
 void ui_begin_frame(void);
 void ui_print_header(unsigned int seed, int board_size,
                      const struct ui_state *ui);

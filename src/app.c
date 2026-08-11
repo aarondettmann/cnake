@@ -15,9 +15,8 @@
 static const int TERMINATION_SIGNALS[] = {SIGINT, SIGTERM, SIGHUP, SIGQUIT};
 
 enum command_action {
-  COMMAND_REPROMPT = 0,
+  COMMAND_REDRAW = 0,
   COMMAND_QUIT,
-  COMMAND_REDRAW,
   COMMAND_SHOW_HELP,
 };
 
@@ -63,6 +62,20 @@ static void print_error(const struct ui_state *ui, const char *message) {
           message);
 }
 
+static void print_warning(const struct ui_state *ui, const char *message) {
+  fprintf(stderr, "%s %s\n", ui_warning_label(ui->monochrome), message);
+}
+
+static void restore_terminal(struct terminal_state *terminal,
+                             const struct ui_state *ui) {
+  unsigned int failures = terminal_restore(terminal);
+
+  if (failures & TERMINAL_RESTORE_SCREEN_FAILED)
+    print_warning(ui, "Unable to restore terminal screen.");
+  if (failures & TERMINAL_RESTORE_SETTINGS_FAILED)
+    print_warning(ui, "Unable to restore terminal settings.");
+}
+
 static void print_command_error(const struct ui_state *ui) {
   fprintf(stderr, "\n%s Unable to read a command.\n",
           ui_error_label(ui->mode, ui->monochrome));
@@ -102,10 +115,10 @@ apply_player_command(struct game_state *game, struct ui_state *ui,
   case PLAYER_COMMAND_QUIT:
     return COMMAND_QUIT;
   case PLAYER_COMMAND_INVALID:
-    return COMMAND_REPROMPT;
+    break;
   }
 
-  return COMMAND_REPROMPT;
+  return COMMAND_REDRAW;
 }
 
 static enum command_action
@@ -225,9 +238,14 @@ read_replay_command(const struct ui_state *ui, struct terminal_state *terminal,
   return REPLAY_COMMAND_QUIT;
 }
 
+/*
+ * A requested seed stays fixed so a board can be replayed exactly. Without one,
+ * every round draws a fresh seed from the running generator; reusing the same
+ * seed would hand the player an identical board on every retry.
+ */
 static int run_games(struct game_state *game, struct ui_state *ui,
                      struct terminal_state *terminal, unsigned int seed,
-                     int board_size) {
+                     bool fixed_seed, int board_size) {
   int exit_status = APP_EXIT_OK;
 
   while (!interrupted) {
@@ -262,6 +280,8 @@ static int run_games(struct game_state *game, struct ui_state *ui,
     }
 
     game_destroy(game);
+    if (!fixed_seed)
+      seed = (unsigned int)rand();
   }
 
   return exit_status;
@@ -281,11 +301,10 @@ int app_run(const struct cli_options *options) {
   game_reset(&game);
   ui_initialize_state(&ui, options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
                       options->monochrome);
-  terminal_initialize_state(&terminal, &interrupted, options->monochrome);
+  terminal_initialize_state(&terminal, &interrupted);
 
   if (options->board_size != NULL &&
-      cli_parse_board_size(options->board_size, &board_size) !=
-          BOARD_SIZE_VALID) {
+      !cli_parse_board_size(options->board_size, &board_size)) {
     print_board_size_error(&ui);
     return APP_EXIT_INPUT_ERROR;
   }
@@ -307,10 +326,11 @@ int app_run(const struct cli_options *options) {
     goto cleanup;
   }
 
-  exit_status = run_games(&game, &ui, &terminal, seed, board_size);
+  exit_status = run_games(&game, &ui, &terminal, seed, options->seed_provided,
+                          board_size);
 
 cleanup:
-  terminal_restore(&terminal);
+  restore_terminal(&terminal, &ui);
   if (interrupted) {
     exit_status = 128 + interrupted;
     ui_print_interrupted_exit(&ui);
