@@ -69,7 +69,6 @@ int game_board_tile(const struct game_state *game, int x, int y);
 void game_set_board_tile(struct game_state *game, int x, int y, int value);
 void game_step(struct game_state *game, enum direction direction);
 void game_grow(struct game_state *game, int amount);
-int game_capacity(const struct game_state *game);
 int game_score(const struct game_state *game);
 
 #endif

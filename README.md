@@ -60,7 +60,8 @@ Options:
 Options and the board size can appear in any order.
 
 The seed reproduces the same board and subsequent random tile placements when
-using the same C library implementation.
+using the same C library implementation. A seeded game replays the same board on
+every retry; without `--seed`, each retry starts from a new board.
 
 ---
 

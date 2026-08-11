@@ -6,23 +6,25 @@
 #include <sys/select.h>
 #include <unistd.h>
 
-#define COLOR_YELLOW "\x1B[93m"
-#define STYLE_RESET "\033[0m"
-#define WARNING_LABEL_TEXT " ! Warning:"
 #define ENTER_ALTERNATE_SCREEN "\033[?1049h\033[?25l"
 #define LEAVE_ALTERNATE_SCREEN "\033[?25h\033[?1049l"
 
 void terminal_initialize_state(struct terminal_state *terminal,
-                               volatile sig_atomic_t *interrupted,
-                               bool monochrome) {
+                               volatile sig_atomic_t *interrupted) {
   *terminal = (struct terminal_state){
       .interrupted = interrupted,
-      .monochrome = monochrome,
   };
 }
 
+/*
+ * Screen switching bypasses stdio, so pending buffered output has to be pushed
+ * out first. Otherwise it would surface on whichever screen happens to be
+ * active when stdio flushes next.
+ */
 static bool write_stdout(const char *text) {
   size_t remaining = strlen(text);
+
+  fflush(stdout);
 
   while (remaining > 0) {
     ssize_t written = write(STDOUT_FILENO, text, remaining);
@@ -72,31 +74,26 @@ bool terminal_initialize(struct terminal_state *terminal) {
   terminal->initialized = true;
 
   if (!terminal_enter_screen(terminal)) {
-    terminal_restore(terminal);
+    (void)terminal_restore(terminal);
     return false;
   }
 
   return true;
 }
 
-void terminal_restore(struct terminal_state *terminal) {
-  bool screen_restore_failed =
-      terminal->screen_active && !write_stdout(LEAVE_ALTERNATE_SCREEN);
+unsigned int terminal_restore(struct terminal_state *terminal) {
+  unsigned int failures = TERMINAL_RESTORE_OK;
+
+  if (terminal->screen_active && !write_stdout(LEAVE_ALTERNATE_SCREEN))
+    failures |= TERMINAL_RESTORE_SCREEN_FAILED;
   terminal->screen_active = false;
 
-  bool settings_restore_failed =
-      terminal->initialized &&
-      tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->original) == -1;
+  if (terminal->initialized &&
+      tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->original) == -1)
+    failures |= TERMINAL_RESTORE_SETTINGS_FAILED;
   terminal->initialized = false;
 
-  const char *style = terminal->monochrome ? "" : COLOR_YELLOW;
-  const char *reset = terminal->monochrome ? "" : STYLE_RESET;
-  if (screen_restore_failed)
-    fprintf(stderr, "%s%s%s Unable to restore terminal screen.\n", style,
-            WARNING_LABEL_TEXT, reset);
-  if (settings_restore_failed)
-    fprintf(stderr, "%s%s%s Unable to restore terminal settings.\n", style,
-            WARNING_LABEL_TEXT, reset);
+  return failures;
 }
 
 static bool terminal_interrupted(const struct terminal_state *terminal) {

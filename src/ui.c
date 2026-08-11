@@ -7,6 +7,9 @@
 #define STATUS_INNER_WIDTH 20
 #define STATUS_DEBUG_GAP_WIDTH 3
 
+/* Score, snake, snack, poison and obstacle rows. */
+#define STATUS_ROW_COUNT 5
+
 #define COLOR_RED "\x1B[91m"
 #define COLOR_GREEN "\x1B[92m"
 #define COLOR_YELLOW "\x1B[93m"
@@ -23,6 +26,7 @@
 #define CURSOR_UP_ONE_LINE "\033[1A"
 #define UNICODE_ERROR_LABEL_TEXT " × Error:"
 #define ASCII_ERROR_LABEL_TEXT " x Error:"
+#define WARNING_LABEL_TEXT " ! Warning:"
 
 struct ui_style {
   const char *red;
@@ -291,6 +295,11 @@ const char *ui_error_label(enum ui_mode mode, bool monochrome) {
   }
 }
 
+const char *ui_warning_label(bool monochrome) {
+  return monochrome ? WARNING_LABEL_TEXT
+                    : COLOR_YELLOW WARNING_LABEL_TEXT STYLE_RESET;
+}
+
 void ui_begin_frame(void) { printf("%s", CURSOR_HOME); }
 
 static const char *head_glyph(enum direction direction,
@@ -388,7 +397,6 @@ static void print_tile(int tile, enum direction direction,
 static void print_status_row(const struct game_state *game, int row,
                              const struct ui_theme *theme,
                              const struct ui_style *style) {
-  print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
   printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
 
   switch (row) {
@@ -414,8 +422,8 @@ static void print_status_row(const struct game_state *game, int row,
            style->reset, game->stats.poison);
     break;
   case 4:
-    printf(" %s%s%s   Obstacle       ", style->blue, theme->obstacle,
-           style->reset);
+    printf(" %s%s%s   Obstacle  %4d ", style->blue, theme->obstacle,
+           style->reset, game->obstacle_count);
     break;
   default:
     printf("%*s", STATUS_INNER_WIDTH, "");
@@ -433,7 +441,6 @@ static void print_debug_row(const struct game_state *game, int row,
   int row_width = debug_row_text_width(game->board_size, value_width);
   int right_padding = panel_inner_width - row_width - 2;
 
-  print_repeated(" ", STATUS_DEBUG_GAP_WIDTH);
   printf("%s%s%s%s ", style->dim, style->cyan, theme->vertical, style->reset);
 
   for (int x = 0; x < game->board_size; x++) {
@@ -447,63 +454,135 @@ static void print_debug_row(const struct game_state *game, int row,
 }
 
 /*
- * Draw the board with fixed-width status and optional debug panels.
+ * Panels sit side by side but need not be equally tall, so every column decides
+ * per rendered line which part of its frame it contributes.
+ */
+enum panel_line {
+  PANEL_LINE_TOP,
+  PANEL_LINE_CONTENT,
+  PANEL_LINE_BOTTOM,
+  PANEL_LINE_BLANK,
+};
+
+static enum panel_line panel_line_at(int line, int content_rows) {
+  if (line == 0)
+    return PANEL_LINE_TOP;
+  if (line <= content_rows)
+    return PANEL_LINE_CONTENT;
+  if (line == content_rows + 1)
+    return PANEL_LINE_BOTTOM;
+  return PANEL_LINE_BLANK;
+}
+
+/* Board lines carry one leading space in front of the frame. */
+static int board_line_width(int board_size) {
+  return board_outer_width(board_size) + 1;
+}
+
+static void print_board_line(const struct game_state *game, int line,
+                             const struct ui_theme *theme,
+                             const struct ui_style *style) {
+  switch (panel_line_at(line, game->board_size)) {
+  case PANEL_LINE_TOP:
+    draw_border(game->board_size, false, theme, style);
+    return;
+  case PANEL_LINE_BOTTOM:
+    draw_border(game->board_size, true, theme, style);
+    return;
+  case PANEL_LINE_BLANK:
+    print_repeated(" ", board_line_width(game->board_size));
+    return;
+  case PANEL_LINE_CONTENT:
+    break;
+  }
+
+  int y = line - 1;
+  printf("%s%s %s %s", style->dim, style->cyan, theme->vertical, style->reset);
+
+  for (int x = 0; x < game->board_size; x++)
+    print_tile(game_board_tile(game, x, y), game->direction, theme, style);
+
+  printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
+}
+
+static void print_status_line(const struct game_state *game, int line,
+                              int content_rows, const struct ui_theme *theme,
+                              const struct ui_style *style) {
+  switch (panel_line_at(line, content_rows)) {
+  case PANEL_LINE_TOP:
+    print_panel_top(STATUS_INNER_WIDTH, "STATUS", game->board_size, true, theme,
+                    style);
+    return;
+  case PANEL_LINE_BOTTOM:
+    print_panel_bottom(STATUS_INNER_WIDTH, theme, style);
+    return;
+  case PANEL_LINE_BLANK:
+    print_repeated(" ", STATUS_INNER_WIDTH + 2);
+    return;
+  case PANEL_LINE_CONTENT:
+    print_status_row(game, line - 1, theme, style);
+    return;
+  }
+}
+
+static void print_debug_line(const struct game_state *game, int line,
+                             int value_width, int panel_inner_width,
+                             const struct ui_theme *theme,
+                             const struct ui_style *style) {
+  switch (panel_line_at(line, game->board_size)) {
+  case PANEL_LINE_TOP:
+    print_panel_top(panel_inner_width, "DEBUG", game->board_size, false, theme,
+                    style);
+    return;
+  case PANEL_LINE_BOTTOM:
+    print_panel_bottom(panel_inner_width, theme, style);
+    return;
+  case PANEL_LINE_BLANK:
+    print_repeated(" ", panel_inner_width + 2);
+    return;
+  case PANEL_LINE_CONTENT:
+    print_debug_row(game, line - 1, value_width, panel_inner_width, theme,
+                    style);
+    return;
+  }
+}
+
+/*
+ * Draw the board with fixed-width status and optional debug panels. The status
+ * panel keeps all its rows even when the board is shorter than the panel, so it
+ * extends past the board frame on the smallest boards.
  */
 void ui_draw_game_board(const struct game_state *game,
                         const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
+  int status_rows = game->board_size > STATUS_ROW_COUNT ? game->board_size
+                                                       : STATUS_ROW_COUNT;
+  int total_lines = status_rows + 2;
   int debug_value_width = 0;
   int debug_inner_width = 0;
 
   if (ui->show_debug) {
     debug_value_width = debug_row_value_width(game);
-    debug_inner_width = debug_panel_inner_width(game->board_size,
-                                                debug_value_width);
+    debug_inner_width =
+        debug_panel_inner_width(game->board_size, debug_value_width);
   }
 
-  draw_border(game->board_size, false, theme, style);
-  print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
-  print_panel_top(STATUS_INNER_WIDTH, "STATUS", game->board_size, true, theme,
-                  style);
+  for (int line = 0; line < total_lines; line++) {
+    print_board_line(game, line, theme, style);
 
-  if (ui->show_debug) {
-    print_repeated(" ", STATUS_DEBUG_GAP_WIDTH);
-    print_panel_top(debug_inner_width, "DEBUG", game->board_size, false, theme,
-                    style);
-  }
+    print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
+    print_status_line(game, line, status_rows, theme, style);
 
-  finish_line();
-  printf("%s", style->reset);
+    if (ui->show_debug) {
+      print_repeated(" ", STATUS_DEBUG_GAP_WIDTH);
+      print_debug_line(game, line, debug_value_width, debug_inner_width, theme,
+                       style);
+    }
 
-  for (int y = 0; y < game->board_size; y++) {
-    printf("%s%s %s %s", style->dim, style->cyan, theme->vertical,
-           style->reset);
-
-    for (int x = 0; x < game->board_size; x++)
-      print_tile(game_board_tile(game, x, y), game->direction, theme, style);
-
-    printf("%s%s%s%s", style->dim, style->cyan, theme->vertical, style->reset);
-    print_status_row(game, y, theme, style);
-
-    if (ui->show_debug)
-      print_debug_row(game, y, debug_value_width, debug_inner_width, theme,
-                      style);
-
+    printf("%s", style->reset);
     finish_line();
   }
-
-  draw_border(game->board_size, true, theme, style);
-  print_repeated(" ", BOARD_STATUS_GAP_WIDTH);
-  print_panel_bottom(STATUS_INNER_WIDTH, theme, style);
-
-  if (ui->show_debug) {
-    print_repeated(" ", STATUS_DEBUG_GAP_WIDTH);
-    print_panel_bottom(debug_inner_width, theme, style);
-  }
-
-  printf("%s", style->reset);
-  finish_line();
 }
 
 static void print_game_status_message(enum game_status status,

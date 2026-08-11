@@ -232,10 +232,6 @@ void game_step(struct game_state *game, enum direction direction) {
     game->status = GAME_WON;
 }
 
-int game_capacity(const struct game_state *game) {
-  return game->board_size * game->board_size - game->obstacle_count - 1;
-}
-
 int game_score(const struct game_state *game) {
   int moves = game->stats.moves;
   int snacks = game->stats.snacks;

@@ -96,14 +96,15 @@ static void test_parse_errors(void) {
 static void test_board_size_parsing(void) {
   int board_size = 0;
 
-  CHECK_EQ(cli_parse_board_size("4", &board_size), BOARD_SIZE_VALID);
+  CHECK(cli_parse_board_size("4", &board_size));
   CHECK_EQ(board_size, MIN_BOARD_SIZE);
-  CHECK_EQ(cli_parse_board_size("10 \n", &board_size), BOARD_SIZE_VALID);
+  CHECK(cli_parse_board_size("10 \n", &board_size));
   CHECK_EQ(board_size, MAX_BOARD_SIZE);
-  CHECK_EQ(cli_parse_board_size("3", &board_size), BOARD_SIZE_OUT_OF_RANGE);
-  CHECK_EQ(cli_parse_board_size("11", &board_size), BOARD_SIZE_OUT_OF_RANGE);
-  CHECK_EQ(cli_parse_board_size("six", &board_size), BOARD_SIZE_INVALID);
-  CHECK_EQ(cli_parse_board_size("6x", &board_size), BOARD_SIZE_INVALID);
+  CHECK(!cli_parse_board_size("3", &board_size));
+  CHECK(!cli_parse_board_size("11", &board_size));
+  CHECK(!cli_parse_board_size("six", &board_size));
+  CHECK(!cli_parse_board_size("6x", &board_size));
+  CHECK_EQ(board_size, MAX_BOARD_SIZE);
 }
 
 int main(void) {

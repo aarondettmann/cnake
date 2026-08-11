@@ -23,12 +23,6 @@ enum cli_parse_status {
   CLI_PARSE_EXTRA_ARGUMENT,
 };
 
-enum board_size_parse_status {
-  BOARD_SIZE_INVALID = 0,
-  BOARD_SIZE_OUT_OF_RANGE,
-  BOARD_SIZE_VALID,
-};
-
 struct cli_options {
   enum cli_action action;
   bool ascii;
@@ -41,7 +35,6 @@ struct cli_options {
 
 enum cli_parse_status cli_parse_options(int argc, char *argv[],
                                         struct cli_options *options);
-enum board_size_parse_status cli_parse_board_size(const char *input,
-                                                  int *board_size);
+bool cli_parse_board_size(const char *input, int *board_size);
 
 #endif
