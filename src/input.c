@@ -1,31 +1,5 @@
 #include "input.h"
 
-static enum input_read_result
-input_result_from_terminal(enum terminal_read_status status) {
-  switch (status) {
-  case TERMINAL_READ_ERROR:
-    return INPUT_READ_ERROR;
-  case TERMINAL_READ_EOF:
-    return INPUT_READ_EOF;
-  case TERMINAL_READ_OK:
-    return INPUT_READ_OK;
-  case TERMINAL_READ_ESCAPE:
-    return INPUT_READ_ESCAPE;
-  }
-
-  return INPUT_READ_ERROR;
-}
-
-enum input_read_result input_read_command(struct terminal_state *terminal,
-                                          char *input) {
-  return input_result_from_terminal(terminal_read_command_key(terminal, input));
-}
-
-enum input_read_result input_read_help(struct terminal_state *terminal,
-                                       char *input) {
-  return input_result_from_terminal(terminal_read_key(terminal, input));
-}
-
 enum player_command input_parse_player_command(char input) {
   switch (input) {
   case 'k':

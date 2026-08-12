@@ -24,6 +24,22 @@ static bool parse_seed(const char *input, unsigned int *seed) {
   return true;
 }
 
+static bool parse_board_size(const char *input, int *board_size) {
+  char *end;
+
+  errno = 0;
+  long parsed_size = strtol(input, &end, 10);
+
+  if (errno != 0 || end == input || *end != '\0')
+    return false;
+
+  if (parsed_size < MIN_BOARD_SIZE || parsed_size > MAX_BOARD_SIZE)
+    return false;
+
+  *board_size = (int)parsed_size;
+  return true;
+}
+
 /*
  * Informational options deliberately short-circuit all validation. Scan for
  * presentation mode flags at the same time so later parse errors use the
@@ -49,7 +65,9 @@ static void scan_global_options(int argc, char *argv[],
 
 enum cli_parse_status cli_parse_options(int argc, char *argv[],
                                         struct cli_options *options) {
-  *options = (struct cli_options){0};
+  const char *board_size_argument = NULL;
+
+  *options = (struct cli_options){.board_size = DEFAULT_BOARD_SIZE};
   scan_global_options(argc, argv, options);
 
   if (options->action != CLI_ACTION_RUN)
@@ -87,35 +105,19 @@ enum cli_parse_status cli_parse_options(int argc, char *argv[],
       return CLI_PARSE_UNKNOWN_OPTION;
     }
 
-    if (options->board_size != NULL) {
+    if (board_size_argument != NULL) {
       options->error_argument = argument;
       return CLI_PARSE_EXTRA_ARGUMENT;
     }
 
-    options->board_size = argument;
+    board_size_argument = argument;
+  }
+
+  if (board_size_argument != NULL &&
+      !parse_board_size(board_size_argument, &options->board_size)) {
+    options->error_argument = board_size_argument;
+    return CLI_PARSE_INVALID_BOARD_SIZE;
   }
 
   return CLI_PARSE_OK;
-}
-
-bool cli_parse_board_size(const char *input, int *board_size) {
-  char *end;
-
-  errno = 0;
-  long parsed_size = strtol(input, &end, 10);
-
-  if (errno != 0 || end == input)
-    return false;
-
-  while (isspace((unsigned char)*end))
-    end++;
-
-  if (*end != '\0')
-    return false;
-
-  if (parsed_size < MIN_BOARD_SIZE || parsed_size > MAX_BOARD_SIZE)
-    return false;
-
-  *board_size = (int)parsed_size;
-  return true;
 }

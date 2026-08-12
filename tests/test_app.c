@@ -157,7 +157,7 @@ static void free_result(struct app_result *result) {
   free(result->error);
 }
 
-static struct cli_options test_options(const char *board_size) {
+static struct cli_options test_options(int board_size) {
   return (struct cli_options){
       .action = CLI_ACTION_RUN,
       .ascii = true,
@@ -168,8 +168,8 @@ static struct cli_options test_options(const char *board_size) {
   };
 }
 
-static void test_valid_size_requires_a_terminal(void) {
-  struct cli_options options = test_options("6");
+static void test_play_requires_a_terminal(void) {
+  struct cli_options options = test_options(6);
   struct app_result result = {0};
 
   bool ran = run_app(&options, "", &result);
@@ -179,22 +179,6 @@ static void test_valid_size_requires_a_terminal(void) {
   CHECK_EQ(result.exit_status, APP_EXIT_TERMINAL_ERROR);
   CHECK(strstr(result.output, "\033[H\033[0J") == NULL);
   CHECK(strstr(result.error, "Unable to enable direct input mode.") != NULL);
-
-  free_result(&result);
-}
-
-static void test_invalid_size_is_rejected(void) {
-  struct cli_options options = test_options("3");
-  struct app_result result = {0};
-
-  bool ran = run_app(&options, "", &result);
-  CHECK(ran);
-  if (!ran)
-    return;
-  CHECK_EQ(result.exit_status, APP_EXIT_INPUT_ERROR);
-  CHECK(result.output[0] == '\0');
-  CHECK(strstr(result.error, "Board size must be a number from 4 to 10.") !=
-        NULL);
 
   free_result(&result);
 }
@@ -235,7 +219,7 @@ static void test_quit_restores_terminal(void) {
     _exit(EXIT_FAILURE);
   }
 
-  struct cli_options options = test_options("4");
+  struct cli_options options = test_options(4);
   struct app_result result = {0};
   bool ran = run_app_with_input_fd(&options, slave, &result);
 
@@ -322,7 +306,7 @@ static void test_signal_restores_terminal(int signal_number) {
     _exit(EXIT_FAILURE);
   }
 
-  struct cli_options options = test_options("4");
+  struct cli_options options = test_options(4);
   int exit_status = app_run(&options);
   fflush(stdout);
 
@@ -361,8 +345,7 @@ static void test_signal_restores_terminal(int signal_number) {
 }
 
 int main(void) {
-  test_valid_size_requires_a_terminal();
-  test_invalid_size_is_rejected();
+  test_play_requires_a_terminal();
   test_quit_restores_terminal();
   test_signal_restores_terminal(SIGINT);
   test_signal_restores_terminal(SIGTERM);

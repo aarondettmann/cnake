@@ -60,8 +60,7 @@ $(TEST_CLI_BIN): $(OBJDIR)/cli.o $(OBJDIR)/tests/test_cli.o
 $(TEST_UI_BIN): $(OBJDIR)/game.o $(OBJDIR)/ui.o $(OBJDIR)/tests/test_ui.o
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(TEST_INPUT_BIN): $(OBJDIR)/input.o $(OBJDIR)/terminal.o \
-	$(OBJDIR)/tests/test_input.o
+$(TEST_INPUT_BIN): $(OBJDIR)/input.o $(OBJDIR)/tests/test_input.o
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(TEST_TERMINAL_BIN): $(OBJDIR)/terminal.o $(OBJDIR)/tests/test_terminal.o

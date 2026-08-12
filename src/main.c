@@ -71,6 +71,10 @@ static int print_cli_error(enum cli_parse_status status,
     fprintf(stderr, "%s Unexpected command-line argument: %s\n", error_label,
             options->error_argument);
     break;
+  case CLI_PARSE_INVALID_BOARD_SIZE:
+    fprintf(stderr, "%s Board size must be a number from %d to %d.\n",
+            error_label, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+    break;
   case CLI_PARSE_OK:
     return APP_EXIT_OK;
   }
