@@ -10,8 +10,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define ANSWER_SCORE 42
-
 static const int TERMINATION_SIGNALS[] = {SIGINT, SIGTERM, SIGHUP, SIGQUIT};
 
 enum command_action {
@@ -33,7 +31,7 @@ struct app_context {
   bool fixed_seed;
   int board_size;
   int exit_status;
-  const char *feedback;
+  enum ui_feedback feedback;
 };
 
 static volatile sig_atomic_t interrupted = 0;
@@ -74,12 +72,11 @@ static bool install_signal_handlers(struct signal_handler_state *state) {
 }
 
 static void print_error(const struct ui_state *ui, const char *message) {
-  fprintf(stderr, "%s %s\n", ui_error_label(ui->mode, ui->monochrome),
-          message);
+  fprintf(stderr, "%s %s\n", ui_error_label(ui), message);
 }
 
 static void print_warning(const struct ui_state *ui, const char *message) {
-  fprintf(stderr, "%s %s\n", ui_warning_label(ui->monochrome), message);
+  fprintf(stderr, "%s %s\n", ui_warning_label(ui), message);
 }
 
 static void restore_terminal(struct terminal_state *terminal,
@@ -93,8 +90,7 @@ static void restore_terminal(struct terminal_state *terminal,
 }
 
 static void print_command_error(const struct ui_state *ui) {
-  fprintf(stderr, "\n%s Unable to read a command.\n",
-          ui_error_label(ui->mode, ui->monochrome));
+  fprintf(stderr, "\n%s Unable to read a command.\n", ui_error_label(ui));
 }
 
 static enum command_action apply_player_command(struct app_context *app,
@@ -119,7 +115,7 @@ static enum command_action apply_player_command(struct app_context *app,
     break;
   case PLAYER_COMMAND_GROW:
     game_grow(app->game, 5);
-    app->feedback = ui_grow_feedback(app->ui);
+    app->feedback = UI_FEEDBACK_GROW;
     break;
   case PLAYER_COMMAND_QUIT:
     return COMMAND_QUIT;
@@ -172,19 +168,19 @@ static enum command_action read_player_action(struct app_context *app) {
   char input;
 
   ui_render_command_prompt(app->ui, app->feedback, false, false);
-  app->feedback = NULL;
+  app->feedback = UI_FEEDBACK_NONE;
 
   while (read_command_key_or_quit(app, &input)) {
     enum player_command command = input_parse_player_command(input);
     if (command == PLAYER_COMMAND_INVALID) {
-      ui_render_command_prompt(app->ui, NULL, true, true);
+      ui_render_command_prompt(app->ui, UI_FEEDBACK_NONE, true, true);
       continue;
     }
 
     int previous_score = game_score(app->game);
     enum command_action action = apply_player_command(app, command);
     if (previous_score != ANSWER_SCORE && game_score(app->game) == ANSWER_SCORE)
-      app->feedback = ui_answer_feedback(app->ui);
+      app->feedback = UI_FEEDBACK_ANSWER;
     return action;
   }
 
@@ -204,7 +200,7 @@ static enum command_action show_help(struct app_context *app) {
 }
 
 static enum command_action play_game(struct app_context *app) {
-  app->feedback = NULL;
+  app->feedback = UI_FEEDBACK_NONE;
 
   while (!interrupted) {
     ui_begin_frame();
