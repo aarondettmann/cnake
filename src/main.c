@@ -49,8 +49,10 @@ static void print_help(const char *program_name) {
 static int print_cli_error(enum cli_parse_status status,
                            const struct cli_options *options,
                            const char *program_name) {
-  enum ui_mode mode = options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE;
-  const char *error_label = ui_error_label(mode, options->monochrome);
+  struct ui_state ui;
+  ui_initialize_state(&ui, options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
+                      options->monochrome);
+  const char *error_label = ui_error_label(&ui);
 
   switch (status) {
   case CLI_PARSE_UNKNOWN_OPTION:

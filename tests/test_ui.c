@@ -26,12 +26,18 @@ static bool create_empty_game(struct game_state *game, int board_size) {
   return true;
 }
 
+/* Feedback notices are only reachable through the command prompt. */
 static void render_messages(struct ui_state *ui) {
-  printf("%s\n", ui_error_label(ui->mode, ui->monochrome));
-  printf("%s\n", ui_toggle_debug(ui));
-  printf("%s\n", ui_toggle_debug(ui));
-  printf("%s\n", ui_grow_feedback(ui));
-  printf("%s\n", ui_answer_feedback(ui));
+  enum ui_feedback debug_on = ui_toggle_debug(ui);
+  enum ui_feedback debug_off = ui_toggle_debug(ui);
+
+  printf("%s\n", ui_error_label(ui));
+  printf("%s\n", ui_warning_label(ui));
+
+  ui_render_command_prompt(ui, debug_on, false, false);
+  ui_render_command_prompt(ui, debug_off, false, false);
+  ui_render_command_prompt(ui, UI_FEEDBACK_GROW, false, false);
+  ui_render_command_prompt(ui, UI_FEEDBACK_ANSWER, false, false);
 
   ui_render_help(ui);
   ui_render_help_prompt(ui);
@@ -39,9 +45,9 @@ static void render_messages(struct ui_state *ui) {
 }
 
 static void render_prompts(struct ui_state *ui) {
-  ui_render_command_prompt(ui, NULL, false, false);
-  ui_render_command_prompt(ui, NULL, true, true);
-  ui_render_command_prompt(ui, NULL, true, true);
+  ui_render_command_prompt(ui, UI_FEEDBACK_NONE, false, false);
+  ui_render_command_prompt(ui, UI_FEEDBACK_NONE, true, true);
+  ui_render_command_prompt(ui, UI_FEEDBACK_NONE, true, true);
 
   const enum game_status statuses[] = {
       GAME_WON,
@@ -332,12 +338,26 @@ static void test_prompt_transitions(void) {
 }
 
 static void test_unicode_theme_strings(void) {
+  struct game_state game;
+  if (!create_empty_game(&game, 6))
+    return;
+
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_UNICODE, false);
 
-  CHECK(strstr(ui_error_label(ui.mode, ui.monochrome), "× Error:") != NULL);
-  CHECK(strcmp(ui_answer_feedback(&ui),
-               "\x1B[93m ★ \x1B[0mThe answer is snake.") == 0);
+  CHECK(strstr(ui_error_label(&ui), "× Error:") != NULL);
+  CHECK(strstr(ui_warning_label(&ui), "! Warning:") != NULL);
+
+  char *output = capture_ui_output(&game, &ui, CAPTURE_MESSAGES);
+  CHECK(output != NULL);
+  if (output != NULL) {
+    CHECK(strstr(output, "\x1B[93m ★ \x1B[0mThe answer is snake.") != NULL);
+    CHECK(strstr(output, "\x1B[96m ◆ \x1B[0mDebug view on.") != NULL);
+    CHECK(strstr(output, "\x1B[96m ◆ \x1B[0mDebug view off.") != NULL);
+    free(output);
+  }
+
+  game_destroy(&game);
 }
 
 static void test_answer_score_is_yellow(void) {
@@ -348,7 +368,7 @@ static void test_answer_score_is_yellow(void) {
   game.stats.moves = 6;
   game.stats.snacks = 4;
   game.stats.poison = 1;
-  CHECK_EQ(game_score(&game), 42);
+  CHECK_EQ(game_score(&game), ANSWER_SCORE);
 
   struct ui_state ui;
   ui_initialize_state(&ui, UI_MODE_ASCII, false);

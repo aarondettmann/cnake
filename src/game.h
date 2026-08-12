@@ -12,6 +12,9 @@
 #define MIN_BOARD_SIZE 4
 #define MAX_BOARD_SIZE 10
 
+/* Reaching this score highlights the total and shows a one-off message. */
+#define ANSWER_SCORE 42
+
 enum game_status {
   GAME_RUNNING = 0,
   GAME_WON,

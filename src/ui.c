@@ -139,20 +139,12 @@ static const struct ui_theme ASCII_THEME = {
     .game_over_dash = "-",
 };
 
-static const struct ui_theme *theme_for_mode(enum ui_mode mode) {
-  return mode == UI_MODE_ASCII ? &ASCII_THEME : &UNICODE_THEME;
-}
-
 static const struct ui_theme *theme_for_ui(const struct ui_state *ui) {
-  return theme_for_mode(ui->mode);
-}
-
-static const struct ui_style *style_for_monochrome(bool monochrome) {
-  return monochrome ? &MONOCHROME_STYLE : &ANSI_STYLE;
+  return ui->mode == UI_MODE_ASCII ? &ASCII_THEME : &UNICODE_THEME;
 }
 
 static const struct ui_style *style_for_ui(const struct ui_state *ui) {
-  return style_for_monochrome(ui->monochrome);
+  return ui->monochrome ? &MONOCHROME_STYLE : &ANSI_STYLE;
 }
 
 static void print_repeated(const char *text, int count) {
@@ -285,19 +277,19 @@ void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
   ui->mode = mode;
 }
 
-const char *ui_error_label(enum ui_mode mode, bool monochrome) {
-  if (mode == UI_MODE_ASCII) {
-    return monochrome ? ASCII_ERROR_LABEL_TEXT
-                      : COLOR_RED ASCII_ERROR_LABEL_TEXT STYLE_RESET;
-  } else {
-    return monochrome ? UNICODE_ERROR_LABEL_TEXT
-                      : COLOR_RED UNICODE_ERROR_LABEL_TEXT STYLE_RESET;
+const char *ui_error_label(const struct ui_state *ui) {
+  if (ui->mode == UI_MODE_ASCII) {
+    return ui->monochrome ? ASCII_ERROR_LABEL_TEXT
+                          : COLOR_RED ASCII_ERROR_LABEL_TEXT STYLE_RESET;
   }
+
+  return ui->monochrome ? UNICODE_ERROR_LABEL_TEXT
+                        : COLOR_RED UNICODE_ERROR_LABEL_TEXT STYLE_RESET;
 }
 
-const char *ui_warning_label(bool monochrome) {
-  return monochrome ? WARNING_LABEL_TEXT
-                    : COLOR_YELLOW WARNING_LABEL_TEXT STYLE_RESET;
+const char *ui_warning_label(const struct ui_state *ui) {
+  return ui->monochrome ? WARNING_LABEL_TEXT
+                        : COLOR_YELLOW WARNING_LABEL_TEXT STYLE_RESET;
 }
 
 void ui_begin_frame(void) { printf("%s", CURSOR_HOME); }
@@ -403,7 +395,7 @@ static void print_status_row(const struct game_state *game, int row,
   case 0: {
     int score = game_score(game);
     printf(" %s%s%s   Score ", style->yellow, theme->score, style->reset);
-    if (score == 42)
+    if (score == ANSWER_SCORE)
       printf("%s%8d%s ", style->yellow, score, style->reset);
     else
       printf("%8d ", score);
@@ -671,6 +663,39 @@ enum ui_message {
   UI_MESSAGE_INVALID_COMMAND,
 };
 
+/*
+ * Only the glyph of a feedback notice depends on the theme, so one entry per
+ * notice covers both modes. The colour is dropped in monochrome mode, like
+ * every other style code.
+ */
+struct ui_feedback_text {
+  const char *unicode_glyph;
+  const char *ascii_glyph;
+  const char *color;
+  const char *text;
+};
+
+static const struct ui_feedback_text FEEDBACK_TEXT[] = {
+    [UI_FEEDBACK_DEBUG_ON] = {"◆", "*", COLOR_CYAN, "Debug view on."},
+    [UI_FEEDBACK_DEBUG_OFF] = {"◆", "*", COLOR_CYAN, "Debug view off."},
+    [UI_FEEDBACK_GROW] = {"!", "!", COLOR_YELLOW, "Length +5."},
+    [UI_FEEDBACK_ANSWER] = {"★", "+", COLOR_YELLOW, "The answer is snake."},
+};
+
+static void print_feedback_message(enum ui_feedback feedback,
+                                   const struct ui_state *ui) {
+  if (feedback == UI_FEEDBACK_NONE)
+    return;
+
+  const struct ui_feedback_text *notice = &FEEDBACK_TEXT[feedback];
+  const struct ui_style *style = style_for_ui(ui);
+  const char *glyph =
+      ui->mode == UI_MODE_ASCII ? notice->ascii_glyph : notice->unicode_glyph;
+
+  printf("%s %s %s%s", ui->monochrome ? "" : notice->color, glyph, style->reset,
+         notice->text);
+}
+
 static void print_input_prompt(enum ui_prompt prompt,
                                const struct ui_theme *theme,
                                const struct ui_style *style) {
@@ -691,10 +716,10 @@ static void print_input_prompt(enum ui_prompt prompt,
  * Keep one message row above one prompt row. On retries, move back to the
  * message row and replace both rows instead of appending terminal output.
  */
-static void render_input_area(const struct ui_state *ui,
-                              enum ui_prompt prompt, enum ui_message message,
-                              const char *feedback, enum game_status status,
-                              bool replace) {
+static void render_input_area(const struct ui_state *ui, enum ui_prompt prompt,
+                              enum ui_message message,
+                              enum ui_feedback feedback,
+                              enum game_status status, bool replace) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
 
@@ -705,7 +730,7 @@ static void render_input_area(const struct ui_state *ui,
 
   switch (message) {
   case UI_MESSAGE_FEEDBACK:
-    printf("%s", feedback);
+    print_feedback_message(feedback, ui);
     break;
   case UI_MESSAGE_GAME_STATUS:
     print_game_status_message(status, ui);
@@ -728,11 +753,12 @@ static void render_input_area(const struct ui_state *ui,
   fflush(stdout);
 }
 
-void ui_render_command_prompt(const struct ui_state *ui, const char *feedback,
-                              bool invalid, bool replace) {
+void ui_render_command_prompt(const struct ui_state *ui,
+                              enum ui_feedback feedback, bool invalid,
+                              bool replace) {
   enum ui_message message = UI_MESSAGE_NONE;
 
-  if (feedback != NULL)
+  if (feedback != UI_FEEDBACK_NONE)
     message = UI_MESSAGE_FEEDBACK;
   else if (invalid)
     message = UI_MESSAGE_INVALID_COMMAND;
@@ -747,7 +773,8 @@ void ui_render_replay_prompt(const struct ui_state *ui,
   enum ui_message message =
       invalid ? UI_MESSAGE_INVALID_COMMAND : UI_MESSAGE_GAME_STATUS;
 
-  render_input_area(ui, UI_PROMPT_REPLAY, message, NULL, game_status, replace);
+  render_input_area(ui, UI_PROMPT_REPLAY, message, UI_FEEDBACK_NONE,
+                    game_status, replace);
 }
 
 void ui_render_help(const struct ui_state *ui) {
@@ -756,39 +783,14 @@ void ui_render_help(const struct ui_state *ui) {
 }
 
 void ui_render_help_prompt(const struct ui_state *ui) {
-  render_input_area(ui, UI_PROMPT_HELP, UI_MESSAGE_NONE, NULL, GAME_RUNNING,
-                    false);
+  render_input_area(ui, UI_PROMPT_HELP, UI_MESSAGE_NONE, UI_FEEDBACK_NONE,
+                    GAME_RUNNING, false);
 }
 
-const char *ui_toggle_debug(struct ui_state *ui) {
+enum ui_feedback ui_toggle_debug(struct ui_state *ui) {
   ui->show_debug = !ui->show_debug;
-  // clang-format off
-  if (ui->mode == UI_MODE_ASCII) {
-    return ui->show_debug
-               ? (ui->monochrome ? " * Debug view on." : COLOR_CYAN " * " STYLE_RESET "Debug view on.")
-               : (ui->monochrome ? " * Debug view off." : COLOR_CYAN " * " STYLE_RESET "Debug view off.");
-  } else {
-    return ui->show_debug
-               ? (ui->monochrome ? " ◆ Debug view on." : COLOR_CYAN " ◆ " STYLE_RESET "Debug view on.")
-               : (ui->monochrome ? " ◆ Debug view off." : COLOR_CYAN " ◆ " STYLE_RESET "Debug view off.");
-  }
-  // clang-format on
-}
 
-const char *ui_grow_feedback(const struct ui_state *ui) {
-  return ui->monochrome ? " ! Length +5."
-                        : COLOR_YELLOW " ! " STYLE_RESET "Length +5.";
-}
-
-const char *ui_answer_feedback(const struct ui_state *ui) {
-  if (ui->mode == UI_MODE_ASCII)
-    return ui->monochrome
-               ? " + The answer is snake."
-               : COLOR_YELLOW " + " STYLE_RESET "The answer is snake.";
-
-  return ui->monochrome
-             ? " ★ The answer is snake."
-             : COLOR_YELLOW " ★ " STYLE_RESET "The answer is snake.";
+  return ui->show_debug ? UI_FEEDBACK_DEBUG_ON : UI_FEEDBACK_DEBUG_OFF;
 }
 
 void ui_print_interrupted_exit(const struct ui_state *ui) {
