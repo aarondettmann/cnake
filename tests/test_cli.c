@@ -17,7 +17,7 @@ static void test_defaults(void) {
   CHECK(!options.ascii);
   CHECK(!options.monochrome);
   CHECK(!options.seed_provided);
-  CHECK(options.board_size == NULL);
+  CHECK_EQ(options.board_size, DEFAULT_BOARD_SIZE);
 }
 
 static void check_order(char *argv[]) {
@@ -29,7 +29,7 @@ static void check_order(char *argv[]) {
   CHECK(options.monochrome);
   CHECK(options.seed_provided);
   CHECK_EQ(options.seed, 1729);
-  CHECK(strcmp(options.board_size, "6") == 0);
+  CHECK_EQ(options.board_size, 6);
 }
 
 static void test_option_order(void) {
@@ -93,18 +93,37 @@ static void test_parse_errors(void) {
   CHECK(strcmp(options.error_argument, "7") == 0);
 }
 
-static void test_board_size_parsing(void) {
-  int board_size = 0;
+static void check_board_size(const char *argument, int expected) {
+  char *argv[] = {"cnake", (char *)argument};
+  struct cli_options options;
 
-  CHECK(cli_parse_board_size("4", &board_size));
-  CHECK_EQ(board_size, MIN_BOARD_SIZE);
-  CHECK(cli_parse_board_size("10 \n", &board_size));
-  CHECK_EQ(board_size, MAX_BOARD_SIZE);
-  CHECK(!cli_parse_board_size("3", &board_size));
-  CHECK(!cli_parse_board_size("11", &board_size));
-  CHECK(!cli_parse_board_size("six", &board_size));
-  CHECK(!cli_parse_board_size("6x", &board_size));
-  CHECK_EQ(board_size, MAX_BOARD_SIZE);
+  CHECK_EQ(cli_parse_options(2, argv, &options), CLI_PARSE_OK);
+  CHECK_EQ(options.board_size, expected);
+}
+
+static void check_rejected_board_size(const char *argument) {
+  char *argv[] = {"cnake", (char *)argument};
+  struct cli_options options;
+
+  CHECK_EQ(cli_parse_options(2, argv, &options), CLI_PARSE_INVALID_BOARD_SIZE);
+  CHECK(strcmp(options.error_argument, argument) == 0);
+}
+
+static void test_board_size_parsing(void) {
+  char *help_argv[] = {"cnake", "3", "--help"};
+  struct cli_options options;
+
+  check_board_size("4", MIN_BOARD_SIZE);
+  check_board_size("10", MAX_BOARD_SIZE);
+  check_rejected_board_size("3");
+  check_rejected_board_size("11");
+  check_rejected_board_size("six");
+  check_rejected_board_size("6x");
+  check_rejected_board_size("10 ");
+
+  /* Informational options still short-circuit board size validation. */
+  CHECK_EQ(cli_parse_options(3, help_argv, &options), CLI_PARSE_OK);
+  CHECK_EQ(options.action, CLI_ACTION_HELP);
 }
 
 int main(void) {

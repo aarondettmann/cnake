@@ -20,6 +20,22 @@ enum command_action {
   COMMAND_SHOW_HELP,
 };
 
+/*
+ * Everything a round needs. The seed advances between rounds unless the player
+ * requested one, exit_status carries the first failure out to app_run, and
+ * feedback holds the one-off message the next prompt displays.
+ */
+struct app_context {
+  struct game_state *game;
+  struct ui_state *ui;
+  struct terminal_state *terminal;
+  unsigned int seed;
+  bool fixed_seed;
+  int board_size;
+  int exit_status;
+  const char *feedback;
+};
+
 static volatile sig_atomic_t interrupted = 0;
 
 static void handle_signal(int signal_number) { interrupted = signal_number; }
@@ -81,37 +97,30 @@ static void print_command_error(const struct ui_state *ui) {
           ui_error_label(ui->mode, ui->monochrome));
 }
 
-static void print_board_size_error(const struct ui_state *ui) {
-  fprintf(stderr, "%s Board size must be a number from %d to %d.\n",
-          ui_error_label(ui->mode, ui->monochrome), MIN_BOARD_SIZE,
-          MAX_BOARD_SIZE);
-}
-
-static enum command_action
-apply_player_command(struct game_state *game, struct ui_state *ui,
-                     enum player_command command, const char **feedback) {
+static enum command_action apply_player_command(struct app_context *app,
+                                                enum player_command command) {
   switch (command) {
   case PLAYER_COMMAND_MOVE_UP:
-    game_step(game, DIRECTION_UP);
-    return COMMAND_REDRAW;
+    game_step(app->game, DIRECTION_UP);
+    break;
   case PLAYER_COMMAND_MOVE_DOWN:
-    game_step(game, DIRECTION_DOWN);
-    return COMMAND_REDRAW;
+    game_step(app->game, DIRECTION_DOWN);
+    break;
   case PLAYER_COMMAND_MOVE_LEFT:
-    game_step(game, DIRECTION_LEFT);
-    return COMMAND_REDRAW;
+    game_step(app->game, DIRECTION_LEFT);
+    break;
   case PLAYER_COMMAND_MOVE_RIGHT:
-    game_step(game, DIRECTION_RIGHT);
-    return COMMAND_REDRAW;
+    game_step(app->game, DIRECTION_RIGHT);
+    break;
   case PLAYER_COMMAND_HELP:
     return COMMAND_SHOW_HELP;
   case PLAYER_COMMAND_TOGGLE_DEBUG:
-    *feedback = ui_toggle_debug(ui);
-    return COMMAND_REDRAW;
+    app->feedback = ui_toggle_debug(app->ui);
+    break;
   case PLAYER_COMMAND_GROW:
-    game_grow(game, 5);
-    *feedback = ui_grow_feedback(ui);
-    return COMMAND_REDRAW;
+    game_grow(app->game, 5);
+    app->feedback = ui_grow_feedback(app->ui);
+    break;
   case PLAYER_COMMAND_QUIT:
     return COMMAND_QUIT;
   case PLAYER_COMMAND_INVALID:
@@ -121,87 +130,93 @@ apply_player_command(struct game_state *game, struct ui_state *ui,
   return COMMAND_REDRAW;
 }
 
-static enum command_action
-read_player_action(struct game_state *game, struct ui_state *ui,
-                   struct terminal_state *terminal, const char **feedback,
-                   int *exit_status) {
-  ui_render_command_prompt(ui, *feedback, false, false);
-  *feedback = NULL;
-
+/*
+ * Wait for one key press. Escape sequences are swallowed, and every reason to
+ * stop reading - a signal, end of input, a read error - reports false, so
+ * callers only have to handle the key they asked for.
+ */
+static bool read_key_or_quit(struct app_context *app, bool skip_newlines,
+                             char *key) {
   while (!interrupted) {
-    char input;
-    enum input_read_result result = input_read_command(terminal, &input);
+    enum terminal_read_status status =
+        skip_newlines ? terminal_read_command_key(app->terminal, key)
+                      : terminal_read_key(app->terminal, key);
 
-    if (result == INPUT_READ_ESCAPE)
+    switch (status) {
+    case TERMINAL_READ_OK:
+      return true;
+    case TERMINAL_READ_ESCAPE:
       continue;
-    if (result == INPUT_READ_ERROR) {
-      print_command_error(ui);
-      *exit_status = APP_EXIT_COMMAND_ERROR;
-      return COMMAND_QUIT;
+    case TERMINAL_READ_EOF:
+      return false;
+    case TERMINAL_READ_ERROR:
+      print_command_error(app->ui);
+      app->exit_status = APP_EXIT_COMMAND_ERROR;
+      return false;
     }
-    if (result == INPUT_READ_EOF)
-      return COMMAND_QUIT;
+  }
 
+  return false;
+}
+
+/* Command prompts ignore a bare Enter; the help screen closes on any key. */
+static bool read_command_key_or_quit(struct app_context *app, char *key) {
+  return read_key_or_quit(app, true, key);
+}
+
+static bool read_any_key_or_quit(struct app_context *app, char *key) {
+  return read_key_or_quit(app, false, key);
+}
+
+static enum command_action read_player_action(struct app_context *app) {
+  char input;
+
+  ui_render_command_prompt(app->ui, app->feedback, false, false);
+  app->feedback = NULL;
+
+  while (read_command_key_or_quit(app, &input)) {
     enum player_command command = input_parse_player_command(input);
     if (command == PLAYER_COMMAND_INVALID) {
-      ui_render_command_prompt(ui, NULL, true, true);
+      ui_render_command_prompt(app->ui, NULL, true, true);
       continue;
     }
 
-    int previous_score = game_score(game);
-    enum command_action action =
-        apply_player_command(game, ui, command, feedback);
-    if (previous_score != ANSWER_SCORE && game_score(game) == ANSWER_SCORE)
-      *feedback = ui_answer_feedback(ui);
+    int previous_score = game_score(app->game);
+    enum command_action action = apply_player_command(app, command);
+    if (previous_score != ANSWER_SCORE && game_score(app->game) == ANSWER_SCORE)
+      app->feedback = ui_answer_feedback(app->ui);
     return action;
   }
 
   return COMMAND_QUIT;
 }
 
-static enum command_action show_help(const struct ui_state *ui,
-                                     struct terminal_state *terminal,
-                                     int *exit_status) {
-  ui_render_help(ui);
-  ui_render_help_prompt(ui);
+static enum command_action show_help(struct app_context *app) {
+  char input;
 
-  while (!interrupted) {
-    char input;
-    enum input_read_result result = input_read_help(terminal, &input);
+  ui_render_help(app->ui);
+  ui_render_help_prompt(app->ui);
 
-    if (result == INPUT_READ_ESCAPE)
-      continue;
-    if (result == INPUT_READ_ERROR) {
-      print_command_error(ui);
-      *exit_status = APP_EXIT_COMMAND_ERROR;
-      return COMMAND_QUIT;
-    }
-    if (result == INPUT_READ_EOF)
-      return COMMAND_QUIT;
-    return input == 'q' ? COMMAND_QUIT : COMMAND_REDRAW;
-  }
+  if (!read_any_key_or_quit(app, &input))
+    return COMMAND_QUIT;
 
-  return COMMAND_QUIT;
+  return input == 'q' ? COMMAND_QUIT : COMMAND_REDRAW;
 }
 
-static enum command_action play_game(struct game_state *game,
-                                     struct ui_state *ui,
-                                     struct terminal_state *terminal,
-                                     unsigned int seed, int *exit_status) {
-  const char *feedback = NULL;
+static enum command_action play_game(struct app_context *app) {
+  app->feedback = NULL;
 
   while (!interrupted) {
     ui_begin_frame();
-    ui_print_header(seed, game->board_size, ui);
-    ui_draw_game_board(game, ui);
+    ui_print_header(app->seed, app->game->board_size, app->ui);
+    ui_draw_game_board(app->game, app->ui);
 
-    if (game->status != GAME_RUNNING)
+    if (app->game->status != GAME_RUNNING)
       return COMMAND_REDRAW;
 
-    enum command_action action =
-        read_player_action(game, ui, terminal, &feedback, exit_status);
+    enum command_action action = read_player_action(app);
     if (action == COMMAND_SHOW_HELP)
-      action = show_help(ui, terminal, exit_status);
+      action = show_help(app);
     if (action == COMMAND_QUIT)
       return action;
   }
@@ -209,30 +224,17 @@ static enum command_action play_game(struct game_state *game,
   return COMMAND_QUIT;
 }
 
-static enum replay_command
-read_replay_command(const struct ui_state *ui, struct terminal_state *terminal,
-                    enum game_status game_status, int *exit_status) {
-  ui_render_replay_prompt(ui, game_status, false, false);
+static enum replay_command read_replay_command(struct app_context *app) {
+  char input;
 
-  while (!interrupted) {
-    char input;
-    enum input_read_result result = input_read_command(terminal, &input);
+  ui_render_replay_prompt(app->ui, app->game->status, false, false);
 
-    if (result == INPUT_READ_ESCAPE)
-      continue;
-    if (result == INPUT_READ_ERROR) {
-      print_command_error(ui);
-      *exit_status = APP_EXIT_COMMAND_ERROR;
-      return REPLAY_COMMAND_QUIT;
-    }
-    if (result == INPUT_READ_EOF)
-      return REPLAY_COMMAND_QUIT;
-
+  while (read_command_key_or_quit(app, &input)) {
     enum replay_command command = input_parse_replay_command(input);
     if (command != REPLAY_COMMAND_INVALID)
       return command;
 
-    ui_render_replay_prompt(ui, game_status, true, true);
+    ui_render_replay_prompt(app->ui, app->game->status, true, true);
   }
 
   return REPLAY_COMMAND_QUIT;
@@ -243,48 +245,42 @@ read_replay_command(const struct ui_state *ui, struct terminal_state *terminal,
  * every round draws a fresh seed from the running generator; reusing the same
  * seed would hand the player an identical board on every retry.
  */
-static int run_games(struct game_state *game, struct ui_state *ui,
-                     struct terminal_state *terminal, unsigned int seed,
-                     bool fixed_seed, int board_size) {
-  int exit_status = APP_EXIT_OK;
-
+static void run_games(struct app_context *app) {
   while (!interrupted) {
-    if (!game_create(game, board_size)) {
-      print_error(ui, "Unable to allocate the game board.");
-      return APP_EXIT_MEMORY_ERROR;
+    if (!game_create(app->game, app->board_size)) {
+      print_error(app->ui, "Unable to allocate the game board.");
+      app->exit_status = APP_EXIT_MEMORY_ERROR;
+      return;
     }
 
-    srand(seed);
-    if (!game_initialize_board(game)) {
-      print_error(ui, "Unable to place all tiles on the board.");
-      return APP_EXIT_TILE_PLACEMENT_ERROR;
+    srand(app->seed);
+    if (!game_initialize_board(app->game)) {
+      print_error(app->ui, "Unable to place all tiles on the board.");
+      app->exit_status = APP_EXIT_TILE_PLACEMENT_ERROR;
+      return;
     }
 
-    enum command_action action =
-        play_game(game, ui, terminal, seed, &exit_status);
-    if (exit_status != APP_EXIT_OK || interrupted)
-      break;
+    enum command_action action = play_game(app);
+    if (app->exit_status != APP_EXIT_OK || interrupted)
+      return;
 
-    if (action == COMMAND_QUIT && game->status == GAME_RUNNING) {
+    if (action == COMMAND_QUIT && app->game->status == GAME_RUNNING) {
       printf("\n");
-      break;
+      return;
     }
 
-    enum replay_command replay =
-        read_replay_command(ui, terminal, game->status, &exit_status);
-    if (exit_status != APP_EXIT_OK || interrupted)
-      break;
+    enum replay_command replay = read_replay_command(app);
+    if (app->exit_status != APP_EXIT_OK || interrupted)
+      return;
     if (replay == REPLAY_COMMAND_QUIT) {
       printf("\n");
-      break;
+      return;
     }
 
-    game_destroy(game);
-    if (!fixed_seed)
-      seed = (unsigned int)rand();
+    game_destroy(app->game);
+    if (!app->fixed_seed)
+      app->seed = (unsigned int)rand();
   }
-
-  return exit_status;
 }
 
 int app_run(const struct cli_options *options) {
@@ -292,22 +288,21 @@ int app_run(const struct cli_options *options) {
   struct ui_state ui;
   struct terminal_state terminal;
   struct signal_handler_state signal_handlers = {0};
-  int board_size = DEFAULT_BOARD_SIZE;
-  int exit_status = APP_EXIT_OK;
-  unsigned int seed =
-      options->seed_provided ? options->seed : (unsigned int)time(NULL);
+  struct app_context app = {
+      .game = &game,
+      .ui = &ui,
+      .terminal = &terminal,
+      .seed = options->seed_provided ? options->seed : (unsigned int)time(NULL),
+      .fixed_seed = options->seed_provided,
+      .board_size = options->board_size,
+      .exit_status = APP_EXIT_OK,
+  };
 
   interrupted = 0;
   game_reset(&game);
   ui_initialize_state(&ui, options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
                       options->monochrome);
   terminal_initialize_state(&terminal, &interrupted);
-
-  if (options->board_size != NULL &&
-      !cli_parse_board_size(options->board_size, &board_size)) {
-    print_board_size_error(&ui);
-    return APP_EXIT_INPUT_ERROR;
-  }
 
   if (!install_signal_handlers(&signal_handlers)) {
     print_error(&ui, "Unable to install signal handler.");
@@ -316,26 +311,25 @@ int app_run(const struct cli_options *options) {
 
   if (!terminal_enter_screen(&terminal)) {
     print_error(&ui, "Unable to initialize terminal screen.");
-    exit_status = APP_EXIT_TERMINAL_ERROR;
+    app.exit_status = APP_EXIT_TERMINAL_ERROR;
     goto cleanup;
   }
 
   if (!terminal_initialize(&terminal)) {
     print_error(&ui, "Unable to enable direct input mode.");
-    exit_status = APP_EXIT_TERMINAL_ERROR;
+    app.exit_status = APP_EXIT_TERMINAL_ERROR;
     goto cleanup;
   }
 
-  exit_status = run_games(&game, &ui, &terminal, seed, options->seed_provided,
-                          board_size);
+  run_games(&app);
 
 cleanup:
   restore_terminal(&terminal, &ui);
   if (interrupted) {
-    exit_status = 128 + interrupted;
+    app.exit_status = 128 + interrupted;
     ui_print_interrupted_exit(&ui);
   }
   game_destroy(&game);
   restore_signal_handlers(&signal_handlers);
-  return exit_status;
+  return app.exit_status;
 }

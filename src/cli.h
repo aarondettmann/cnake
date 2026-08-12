@@ -21,20 +21,21 @@ enum cli_parse_status {
   CLI_PARSE_INVALID_SEED,
   CLI_PARSE_DUPLICATE_SEED,
   CLI_PARSE_EXTRA_ARGUMENT,
+  CLI_PARSE_INVALID_BOARD_SIZE,
 };
 
+/* board_size holds DEFAULT_BOARD_SIZE unless the command line overrides it. */
 struct cli_options {
   enum cli_action action;
   bool ascii;
   bool monochrome;
   bool seed_provided;
   unsigned int seed;
-  const char *board_size;
+  int board_size;
   const char *error_argument;
 };
 
 enum cli_parse_status cli_parse_options(int argc, char *argv[],
                                         struct cli_options *options);
-bool cli_parse_board_size(const char *input, int *board_size);
 
 #endif
