@@ -146,7 +146,7 @@ static void test_terminal_lifecycle(void) {
   CHECK_EQ(bytes_read, (ssize_t)strlen(enter_screen));
   CHECK(memcmp(screen_output, enter_screen, strlen(enter_screen)) == 0);
 
-  CHECK(terminal_initialize(&terminal));
+  CHECK(terminal_enter_raw_mode(&terminal));
   CHECK(terminal.initialized);
   CHECK(terminal.screen_active);
 

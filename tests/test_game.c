@@ -343,7 +343,7 @@ static void test_full_board_win_detection(void) {
 
 static void test_score_rewards_snacks_and_efficiency(void) {
   struct game_state game;
-  game_reset(&game);
+  game_initialize_state(&game);
 
   CHECK_EQ(game_score(&game), 0);
 

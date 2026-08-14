@@ -295,7 +295,7 @@ int app_run(const struct cli_options *options) {
   };
 
   interrupted = 0;
-  game_reset(&game);
+  game_initialize_state(&game);
   ui_initialize_state(&ui, options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
                       options->monochrome);
   terminal_initialize_state(&terminal, &interrupted);
@@ -311,7 +311,7 @@ int app_run(const struct cli_options *options) {
     goto cleanup;
   }
 
-  if (!terminal_initialize(&terminal)) {
+  if (!terminal_enter_raw_mode(&terminal)) {
     print_error(&ui, "Unable to enable direct input mode.");
     app.exit_status = APP_EXIT_TERMINAL_ERROR;
     goto cleanup;
