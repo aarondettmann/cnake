@@ -64,7 +64,7 @@ struct game_state {
   enum game_status status;
 };
 
-void game_reset(struct game_state *game);
+void game_initialize_state(struct game_state *game);
 bool game_create(struct game_state *game, int board_size);
 void game_destroy(struct game_state *game);
 bool game_initialize_board(struct game_state *game);

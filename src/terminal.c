@@ -56,7 +56,7 @@ bool terminal_enter_screen(struct terminal_state *terminal) {
   return false;
 }
 
-bool terminal_initialize(struct terminal_state *terminal) {
+bool terminal_enter_raw_mode(struct terminal_state *terminal) {
   if (!isatty(STDIN_FILENO))
     return false;
 
@@ -72,12 +72,6 @@ bool terminal_initialize(struct terminal_state *terminal) {
     return false;
 
   terminal->initialized = true;
-
-  if (!terminal_enter_screen(terminal)) {
-    (void)terminal_restore(terminal);
-    return false;
-  }
-
   return true;
 }
 

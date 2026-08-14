@@ -4,7 +4,7 @@
 #include <limits.h>
 #include <stdlib.h>
 
-void game_reset(struct game_state *game) {
+void game_initialize_state(struct game_state *game) {
   *game = (struct game_state){
       .board = NULL,
       .board_size = 0,
@@ -18,7 +18,7 @@ void game_reset(struct game_state *game) {
 }
 
 bool game_create(struct game_state *game, int board_size) {
-  game_reset(game);
+  game_initialize_state(game);
   game->board_size = board_size;
   game->board =
       calloc((size_t)board_size * (size_t)board_size, sizeof(*game->board));
@@ -27,7 +27,7 @@ bool game_create(struct game_state *game, int board_size) {
 
 void game_destroy(struct game_state *game) {
   free(game->board);
-  game_reset(game);
+  game_initialize_state(game);
 }
 
 static size_t board_index(const struct game_state *game, int x, int y) {

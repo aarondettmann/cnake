@@ -34,7 +34,7 @@ struct terminal_state {
 void terminal_initialize_state(struct terminal_state *terminal,
                                volatile sig_atomic_t *interrupted);
 bool terminal_enter_screen(struct terminal_state *terminal);
-bool terminal_initialize(struct terminal_state *terminal);
+bool terminal_enter_raw_mode(struct terminal_state *terminal);
 unsigned int terminal_restore(struct terminal_state *terminal);
 enum terminal_read_status terminal_read_key(struct terminal_state *terminal,
                                             char *input);
