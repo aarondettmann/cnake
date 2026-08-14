@@ -10,6 +10,10 @@
 /* Score, snake, snack, poison and obstacle rows. */
 #define STATUS_ROW_COUNT 5
 
+/* Width of the help panel between its frame characters. */
+#define HELP_INNER_WIDTH 30
+#define HELP_TITLE " CONTROLS "
+
 #define COLOR_RED "\x1B[91m"
 #define COLOR_GREEN "\x1B[92m"
 #define COLOR_YELLOW "\x1B[93m"
@@ -315,12 +319,12 @@ void ui_print_header(unsigned int seed, int board_size,
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
   const char *const snake[] = {theme->body, theme->body, theme->head_right};
-  char seed_text[sizeof(seed) * 3 + 3];
-  int seed_width =
-      snprintf(seed_text, sizeof(seed_text), "%u", (unsigned int)seed);
-  int title_width =
-      (int)(sizeof(snake) / sizeof(*snake) + sizeof("  CNAKE () ") - 1) +
-      seed_width;
+  int snake_width = (int)(sizeof(snake) / sizeof(*snake));
+  char seed_text[sizeof("4294967295")];
+  int seed_width = snprintf(seed_text, sizeof(seed_text), "%u", seed);
+  /* The parts of " <snake> CNAKE (<seed>) "; glyphs are one column each. */
+  int title_width = snake_width + seed_width +
+                    (int)(strlen(" ") + strlen(" CNAKE (") + strlen(") "));
   int header_inner_width = game_layout_width(board_size) - 2;
   int fill_width = header_inner_width - title_width;
   int left_fill = fill_width / 2;
@@ -605,39 +609,96 @@ static void print_game_status_message(enum game_status status,
          theme->game_over_dash, style->reset);
 }
 
+/*
+ * The movement diagram as plain text. The h/j/k/l keys render yellow, and the
+ * ^ v < > stand-ins render green through the theme's head glyphs; everything
+ * else is layout.
+ */
+static const char *const HELP_DIAGRAM_ROWS[] = {
+    "          k ^",
+    "      h <     > l",
+    "          j v",
+};
+
+static const char *help_arrow_glyph(char symbol,
+                                    const struct ui_theme *theme) {
+  switch (symbol) {
+  case '^':
+    return theme->head_up;
+  case 'v':
+    return theme->head_down;
+  case '<':
+    return theme->head_left;
+  case '>':
+    return theme->head_right;
+  default:
+    return NULL;
+  }
+}
+
+static void print_help_diagram_row(const char *row,
+                                   const struct ui_theme *theme,
+                                   const struct ui_style *style) {
+  const char *active_color = NULL;
+
+  printf(" %s %s", theme->vertical, style->reset);
+
+  for (const char *symbol = row; *symbol != '\0'; symbol++) {
+    const char *glyph = help_arrow_glyph(*symbol, theme);
+    const char *color = NULL;
+
+    if (glyph != NULL)
+      color = style->green;
+    else if (strchr("hjkl", *symbol) != NULL)
+      color = style->yellow;
+
+    if (color != NULL && color != active_color) {
+      printf("%s", color);
+      active_color = color;
+    }
+
+    if (glyph != NULL)
+      printf("%s", glyph);
+    else
+      printf("%c", *symbol);
+  }
+
+  printf("%s", style->reset);
+  print_repeated(" ", HELP_INNER_WIDTH - 1 - (int)strlen(row));
+  printf("%s%s", style->cyan, theme->vertical);
+  finish_line();
+}
+
 static void print_help_option(const struct ui_theme *theme, const char *command,
                               const char *description,
                               const struct ui_style *style) {
-  printf(" %s %s%-2s%s%-27s%s%s", theme->vertical, style->yellow, command,
-         style->reset, description, style->cyan, theme->vertical);
+  /* One leading space and a two-column key field precede the description. */
+  printf(" %s %s%-2s%s%-*s%s%s", theme->vertical, style->yellow, command,
+         style->reset, HELP_INNER_WIDTH - 3, description, style->cyan,
+         theme->vertical);
   finish_line();
 }
 
 static void print_help(const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
+  int title_width = (int)strlen(HELP_TITLE);
+  int left_fill = (HELP_INNER_WIDTH - title_width) / 2;
+  int right_fill = HELP_INNER_WIDTH - title_width - left_fill;
 
   printf(" %s%s", style->cyan, theme->top_left);
-  print_repeated(theme->horizontal, 10);
-  printf(" CONTROLS ");
-  print_repeated(theme->horizontal, 10);
+  print_repeated(theme->horizontal, left_fill);
+  printf("%s", HELP_TITLE);
+  print_repeated(theme->horizontal, right_fill);
   printf("%s", theme->top_right);
   finish_line();
-  printf(" %s %s          %sk%s %s%s                %s%s", theme->vertical,
-         style->reset, style->yellow, style->green, theme->head_up,
-         style->reset, style->cyan, theme->vertical);
-  finish_line();
-  printf(" %s %s      %sh%s %s     %s %sl%s            %s%s",
-         theme->vertical, style->reset, style->yellow, style->green,
-         theme->head_left, theme->head_right, style->yellow, style->reset,
-         style->cyan, theme->vertical);
-  finish_line();
-  printf(" %s %s          %sj%s %s%s                %s%s", theme->vertical,
-         style->reset, style->yellow, style->green, theme->head_down,
-         style->reset, style->cyan, theme->vertical);
-  finish_line();
+
+  for (size_t index = 0;
+       index < sizeof(HELP_DIAGRAM_ROWS) / sizeof(*HELP_DIAGRAM_ROWS); index++)
+    print_help_diagram_row(HELP_DIAGRAM_ROWS[index], theme, style);
+
   printf(" %s", theme->middle_left);
-  print_repeated(theme->horizontal, 30);
+  print_repeated(theme->horizontal, HELP_INNER_WIDTH);
   printf("%s", theme->middle_right);
   finish_line();
   print_help_option(theme, "?", "Show help", style);
@@ -645,7 +706,7 @@ static void print_help(const struct ui_state *ui) {
   print_help_option(theme, "c", "Add five segments", style);
   print_help_option(theme, "q", "Quit", style);
   printf(" %s", theme->bottom_left);
-  print_repeated(theme->horizontal, 30);
+  print_repeated(theme->horizontal, HELP_INNER_WIDTH);
   printf("%s%s", theme->bottom_right, style->reset);
   finish_line();
 }
