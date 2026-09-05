@@ -344,8 +344,94 @@ static void test_signal_restores_terminal(int signal_number) {
   close(master);
 }
 
+/*
+ * Errors raised while the alternate screen is active must be written after the
+ * screen is restored; otherwise they vanish together with that screen.
+ */
+static void test_error_is_visible_after_screen_restore(void) {
+  const char *leave_screen = "\033[?25h\033[?1049l";
+  const char *error_text = "Unable to enable direct input mode.";
+  int master = -1;
+  int slave = -1;
+  CHECK(open_terminal_pair(&master, &slave));
+  if (master == -1 || slave == -1)
+    return;
+
+  int input_pipe[2];
+  CHECK(pipe(input_pipe) != -1);
+  if (input_pipe[0] == -1) {
+    close(slave);
+    close(master);
+    return;
+  }
+  close(input_pipe[1]);
+
+  int saved_stdin = dup(STDIN_FILENO);
+  int saved_stdout = dup(STDOUT_FILENO);
+  int saved_stderr = dup(STDERR_FILENO);
+  CHECK(saved_stdin != -1);
+  CHECK(saved_stdout != -1);
+  CHECK(saved_stderr != -1);
+  if (saved_stdin == -1 || saved_stdout == -1 || saved_stderr == -1) {
+    if (saved_stdin != -1)
+      close(saved_stdin);
+    if (saved_stdout != -1)
+      close(saved_stdout);
+    if (saved_stderr != -1)
+      close(saved_stderr);
+    close(input_pipe[0]);
+    close(slave);
+    close(master);
+    return;
+  }
+
+  fflush(stdout);
+  fflush(stderr);
+  CHECK(dup2(input_pipe[0], STDIN_FILENO) != -1);
+  CHECK(dup2(slave, STDOUT_FILENO) != -1);
+  CHECK(dup2(slave, STDERR_FILENO) != -1);
+
+  struct cli_options options = test_options(4);
+  int exit_status = app_run(&options);
+  fflush(stdout);
+  fflush(stderr);
+
+  CHECK(dup2(saved_stdin, STDIN_FILENO) != -1);
+  CHECK(dup2(saved_stdout, STDOUT_FILENO) != -1);
+  CHECK(dup2(saved_stderr, STDERR_FILENO) != -1);
+  close(saved_stdin);
+  close(saved_stdout);
+  close(saved_stderr);
+  close(input_pipe[0]);
+
+  CHECK_EQ(exit_status, APP_EXIT_TERMINAL_ERROR);
+
+  close(slave);
+  char output[16384] = {0};
+  size_t output_size = 0;
+  ssize_t bytes_read;
+  while (output_size < sizeof(output) - 1 &&
+         (bytes_read = read(master, output + output_size,
+                            sizeof(output) - output_size - 1)) > 0)
+    output_size += (size_t)bytes_read;
+  close(master);
+
+  CHECK(output_size > 0);
+  if (output_size == 0)
+    return;
+
+  output[output_size] = '\0';
+  const char *left_screen = strstr(output, leave_screen);
+  const char *error_message = strstr(output, error_text);
+  CHECK(left_screen != NULL);
+  CHECK(error_message != NULL);
+  if (left_screen != NULL && error_message != NULL)
+    CHECK(error_message > left_screen);
+}
+
 int main(void) {
   test_play_requires_a_terminal();
+  test_error_is_visible_after_screen_restore();
   test_quit_restores_terminal();
   test_signal_restores_terminal(SIGINT);
   test_signal_restores_terminal(SIGTERM);
