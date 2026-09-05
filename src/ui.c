@@ -225,7 +225,8 @@ static int debug_row_value_width(const struct game_state *game) {
   return value_width;
 }
 
-/* Return the text width of one debug row with fixed-width, space-separated cells. */
+/* Return the text width of one debug row with fixed-width, space-separated
+ * cells. */
 static int debug_row_text_width(int board_size, int value_width) {
   if (board_size <= 0)
     return 0;
@@ -406,8 +407,8 @@ static void print_status_row(const struct game_state *game, int row,
     break;
   }
   case 1:
-    printf(" %s%s%s%s%s Snake     %4d ", style->green, theme->body,
-           theme->body, theme->head_right, style->reset, game->length);
+    printf(" %s%s%s%s%s Snake     %4d ", style->green, theme->body, theme->body,
+           theme->head_right, style->reset, game->length);
     break;
   case 2:
     printf(" %s%s%s   Snack     %4d ", style->yellow, theme->snack,
@@ -552,8 +553,8 @@ void ui_draw_game_board(const struct game_state *game,
                         const struct ui_state *ui) {
   const struct ui_theme *theme = theme_for_ui(ui);
   const struct ui_style *style = style_for_ui(ui);
-  int status_rows = game->board_size > STATUS_ROW_COUNT ? game->board_size
-                                                       : STATUS_ROW_COUNT;
+  int status_rows =
+      game->board_size > STATUS_ROW_COUNT ? game->board_size : STATUS_ROW_COUNT;
   int total_lines = status_rows + 2;
   int debug_value_width = 0;
   int debug_inner_width = 0;
@@ -620,8 +621,7 @@ static const char *const HELP_DIAGRAM_ROWS[] = {
     "          j v",
 };
 
-static const char *help_arrow_glyph(char symbol,
-                                    const struct ui_theme *theme) {
+static const char *help_arrow_glyph(char symbol, const struct ui_theme *theme) {
   switch (symbol) {
   case '^':
     return theme->head_up;
@@ -797,8 +797,8 @@ static void render_input_area(const struct ui_state *ui, enum ui_prompt prompt,
     print_game_status_message(status, ui);
     break;
   case UI_MESSAGE_INVALID_COMMAND:
-    printf("%s %s%s ", style->red,
-           ui->mode == UI_MODE_ASCII ? "x" : "×", style->reset);
+    printf("%s %s%s ", style->red, ui->mode == UI_MODE_ASCII ? "x" : "×",
+           style->reset);
     if (prompt == UI_PROMPT_COMMAND)
       printf("Unknown command. Press ? for help.");
     else

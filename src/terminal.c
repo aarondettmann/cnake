@@ -164,8 +164,8 @@ static void discard_escape_sequence(const struct terminal_state *terminal) {
   } while (status == TERMINAL_READ_OK && (input < '@' || input > '~'));
 }
 
-static enum terminal_read_status
-read_key(struct terminal_state *terminal, char *input, bool skip_newlines) {
+static enum terminal_read_status read_key(struct terminal_state *terminal,
+                                          char *input, bool skip_newlines) {
   enum terminal_read_status status;
 
   do {

@@ -42,9 +42,8 @@ void ui_draw_game_board(const struct game_state *game,
 void ui_render_command_prompt(const struct ui_state *ui,
                               enum ui_feedback feedback, bool invalid,
                               bool replace);
-void ui_render_replay_prompt(const struct ui_state *ui,
-                             enum game_status status, bool invalid,
-                             bool replace);
+void ui_render_replay_prompt(const struct ui_state *ui, enum game_status status,
+                             bool invalid, bool replace);
 void ui_render_help(const struct ui_state *ui);
 void ui_render_help_prompt(const struct ui_state *ui);
 enum ui_feedback ui_toggle_debug(struct ui_state *ui);

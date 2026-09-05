@@ -34,11 +34,11 @@ static void check_order(char *argv[]) {
 
 static void test_option_order(void) {
   char *ascii_first[] = {"cnake", "--ascii", "--monochrome", "--seed", "1729",
-                         "6", NULL};
-  char *size_first[] = {"cnake", "6", "--ascii", "--seed", "1729",
+                         "6",     NULL};
+  char *size_first[] = {"cnake",        "6", "--ascii", "--seed", "1729",
                         "--monochrome", NULL};
-  char *seed_first[] = {"cnake", "--seed", "1729", "--ascii", "--monochrome",
-                        "6", NULL};
+  char *seed_first[] = {"cnake",        "--seed", "1729", "--ascii",
+                        "--monochrome", "6",      NULL};
 
   check_order(ascii_first);
   check_order(size_first);
