@@ -20,8 +20,8 @@ enum command_action {
 
 /*
  * Everything a round needs. The seed advances between rounds unless the player
- * requested one, exit_status carries the first failure out to app_run, and
- * feedback holds the one-off message the next prompt displays.
+ * requested one, exit_status and error_message carry the first failure out to
+ * app_run, and feedback holds the one-off message the next prompt displays.
  */
 struct app_context {
   struct game_state *game;
@@ -31,6 +31,7 @@ struct app_context {
   bool fixed_seed;
   int board_size;
   int exit_status;
+  const char *error_message;
   enum ui_feedback feedback;
 };
 
@@ -75,6 +76,20 @@ static void print_error(const struct ui_state *ui, const char *message) {
   fprintf(stderr, "%s %s\n", ui_error_label(ui), message);
 }
 
+/*
+ * Errors are reported after the terminal is restored. Anything written while
+ * the alternate screen is active disappears with that screen, so the message is
+ * kept until app_run has switched back.
+ */
+static void fail(struct app_context *app, int exit_status,
+                 const char *message) {
+  if (app->exit_status != APP_EXIT_OK)
+    return;
+
+  app->exit_status = exit_status;
+  app->error_message = message;
+}
+
 static void print_warning(const struct ui_state *ui, const char *message) {
   fprintf(stderr, "%s %s\n", ui_warning_label(ui), message);
 }
@@ -87,10 +102,6 @@ static void restore_terminal(struct terminal_state *terminal,
     print_warning(ui, "Unable to restore terminal screen.");
   if (failures & TERMINAL_RESTORE_SETTINGS_FAILED)
     print_warning(ui, "Unable to restore terminal settings.");
-}
-
-static void print_command_error(const struct ui_state *ui) {
-  fprintf(stderr, "\n%s Unable to read a command.\n", ui_error_label(ui));
 }
 
 static enum command_action apply_player_command(struct app_context *app,
@@ -146,8 +157,7 @@ static bool read_key_or_quit(struct app_context *app, bool skip_newlines,
     case TERMINAL_READ_EOF:
       return false;
     case TERMINAL_READ_ERROR:
-      print_command_error(app->ui);
-      app->exit_status = APP_EXIT_COMMAND_ERROR;
+      fail(app, APP_EXIT_COMMAND_ERROR, "Unable to read a command.");
       return false;
     }
   }
@@ -244,15 +254,14 @@ static enum replay_command read_replay_command(struct app_context *app) {
 static void run_games(struct app_context *app) {
   while (!interrupted) {
     if (!game_create(app->game, app->board_size)) {
-      print_error(app->ui, "Unable to allocate the game board.");
-      app->exit_status = APP_EXIT_MEMORY_ERROR;
+      fail(app, APP_EXIT_MEMORY_ERROR, "Unable to allocate the game board.");
       return;
     }
 
     srand(app->seed);
     if (!game_initialize_board(app->game)) {
-      print_error(app->ui, "Unable to place all tiles on the board.");
-      app->exit_status = APP_EXIT_TILE_PLACEMENT_ERROR;
+      fail(app, APP_EXIT_TILE_PLACEMENT_ERROR,
+           "Unable to place all tiles on the board.");
       return;
     }
 
@@ -301,19 +310,18 @@ int app_run(const struct cli_options *options) {
   terminal_initialize_state(&terminal, &interrupted);
 
   if (!install_signal_handlers(&signal_handlers)) {
-    print_error(&ui, "Unable to install signal handler.");
-    return APP_EXIT_TERMINAL_ERROR;
+    fail(&app, APP_EXIT_TERMINAL_ERROR, "Unable to install signal handler.");
+    goto cleanup;
   }
 
   if (!terminal_enter_screen(&terminal)) {
-    print_error(&ui, "Unable to initialize terminal screen.");
-    app.exit_status = APP_EXIT_TERMINAL_ERROR;
+    fail(&app, APP_EXIT_TERMINAL_ERROR,
+         "Unable to initialize terminal screen.");
     goto cleanup;
   }
 
   if (!terminal_enter_raw_mode(&terminal)) {
-    print_error(&ui, "Unable to enable direct input mode.");
-    app.exit_status = APP_EXIT_TERMINAL_ERROR;
+    fail(&app, APP_EXIT_TERMINAL_ERROR, "Unable to enable direct input mode.");
     goto cleanup;
   }
 
@@ -321,6 +329,8 @@ int app_run(const struct cli_options *options) {
 
 cleanup:
   restore_terminal(&terminal, &ui);
+  if (app.error_message != NULL)
+    print_error(&ui, app.error_message);
   if (interrupted) {
     app.exit_status = 128 + interrupted;
     ui_print_interrupted_exit(&ui);
