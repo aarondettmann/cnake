@@ -191,15 +191,57 @@ static void test_self_collision(void) {
     exit(EXIT_FAILURE);
 
   clear_fixture(&game);
-  game.length = 2;
+  game.length = 3;
   place_head(&game, 1, 1);
-  game_set_board_tile(&game, 2, 1, 1);
+  game_set_board_tile(&game, 2, 1, 2);
+  game_set_board_tile(&game, 3, 1, TILE_TAIL);
 
   game_step(&game, DIRECTION_RIGHT);
 
   CHECK_EQ(game.status, GAME_OVER_SNAKE);
   CHECK_EQ(game_board_tile(&game, 1, 1), TILE_HEAD);
-  CHECK_EQ(game_board_tile(&game, 2, 1), 1);
+  CHECK_EQ(game_board_tile(&game, 2, 1), 2);
+  CHECK_EQ(game_board_tile(&game, 3, 1), TILE_TAIL);
+
+  game_destroy(&game);
+}
+
+/* The tail vacates its tile in the same step, so moving onto it is safe. */
+static void test_moving_into_tail_is_allowed(void) {
+  struct game_state game;
+  if (!create_game(&game, 4))
+    exit(EXIT_FAILURE);
+
+  clear_fixture(&game);
+  game.length = 4;
+  place_head(&game, 0, 1);
+  game_set_board_tile(&game, 1, 1, 3);
+  game_set_board_tile(&game, 1, 0, 2);
+  game_set_board_tile(&game, 0, 0, TILE_TAIL);
+
+  game_step(&game, DIRECTION_UP);
+
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game.length, 4);
+  CHECK_EQ(game.head.x, 0);
+  CHECK_EQ(game.head.y, 0);
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_HEAD);
+  CHECK_EQ(game_board_tile(&game, 0, 1), 3);
+  CHECK_EQ(game_board_tile(&game, 1, 1), 2);
+  CHECK_EQ(game_board_tile(&game, 1, 0), TILE_TAIL);
+  CHECK_EQ(count_positive_tiles(&game), 3);
+
+  /* A snake of length two may reverse onto its tail. */
+  clear_fixture(&game);
+  game.length = 2;
+  place_head(&game, 1, 0);
+  game_set_board_tile(&game, 0, 0, TILE_TAIL);
+
+  game_step(&game, DIRECTION_LEFT);
+
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_HEAD);
+  CHECK_EQ(game_board_tile(&game, 1, 0), TILE_TAIL);
 
   game_destroy(&game);
 }
@@ -375,6 +417,7 @@ int main(void) {
   test_direction_moves_and_wrap();
   test_tail_countdown_and_removal();
   test_self_collision();
+  test_moving_into_tail_is_allowed();
   test_obstacle_collision();
   test_fatal_poison_collision();
   test_snack_growth_and_respawn();

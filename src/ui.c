@@ -366,8 +366,8 @@ static void print_tile(int tile, enum direction direction,
                        const struct ui_theme *theme,
                        const struct ui_style *style) {
   if (tile > TILE_EMPTY) {
-    printf("%s%s %s", style->green, tile == 1 ? theme->tail : theme->body,
-           style->reset);
+    printf("%s%s %s", style->green,
+           tile == TILE_TAIL ? theme->tail : theme->body, style->reset);
     return;
   }
 
