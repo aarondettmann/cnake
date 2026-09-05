@@ -123,7 +123,8 @@ static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
 }
 
 static bool output_is_ascii(const char *output) {
-  for (const unsigned char *byte = (const unsigned char *)output; *byte; byte++) {
+  for (const unsigned char *byte = (const unsigned char *)output; *byte;
+       byte++) {
     if (*byte >= 0x80)
       return false;
   }
@@ -132,13 +133,14 @@ static bool output_is_ascii(const char *output) {
 }
 
 static bool has_ansi_sgr(const char *input) {
-  for (const unsigned char *byte = (const unsigned char *)input; *byte; byte++) {
+  for (const unsigned char *byte = (const unsigned char *)input; *byte;
+       byte++) {
     if (*byte != '\033' || byte[1] != '[')
       continue;
 
     const unsigned char *cursor = byte + 2;
-    while (*cursor != '\0' && ((*cursor >= '0' && *cursor <= '9') ||
-                               *cursor == ';'))
+    while (*cursor != '\0' &&
+           ((*cursor >= '0' && *cursor <= '9') || *cursor == ';'))
       cursor++;
 
     if (*cursor == 'm')
@@ -277,8 +279,7 @@ static void test_ascii_messages(void) {
   CHECK(output != NULL);
   if (output != NULL) {
     CHECK(output_is_ascii(output));
-    CHECK(strstr(output,
-                 "\x1B[93m + \x1B[0mThe answer is snake.") != NULL);
+    CHECK(strstr(output, "\x1B[93m + \x1B[0mThe answer is snake.") != NULL);
 
     char *plain_output = strip_ansi(output);
     CHECK(plain_output != NULL);
@@ -422,8 +423,7 @@ static void test_rendered_rows_clear_stale_suffixes(void) {
   char *board_output = capture_ui_output(&game, &ui, CAPTURE_BOARD);
   CHECK(board_output != NULL);
   if (board_output != NULL) {
-    CHECK_EQ(count_occurrences(board_output, "\033[0K\n"),
-             game.board_size + 5);
+    CHECK_EQ(count_occurrences(board_output, "\033[0K\n"), game.board_size + 5);
     CHECK(strstr(board_output, "\033[H\033[0J") == NULL);
     free(board_output);
   }

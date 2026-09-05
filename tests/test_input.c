@@ -6,6 +6,7 @@ static void test_player_command_parsing(void) {
     char input;
     enum player_command expected;
   } cases[] = {
+      /* clang-format off */
       {'k', PLAYER_COMMAND_MOVE_UP},
       {'j', PLAYER_COMMAND_MOVE_DOWN},
       {'h', PLAYER_COMMAND_MOVE_LEFT},
@@ -15,6 +16,7 @@ static void test_player_command_parsing(void) {
       {'c', PLAYER_COMMAND_GROW},
       {'q', PLAYER_COMMAND_QUIT},
       {'x', PLAYER_COMMAND_INVALID},
+      /* clang-format on */
   };
 
   for (size_t index = 0; index < sizeof(cases) / sizeof(*cases); index++)

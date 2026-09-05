@@ -40,8 +40,8 @@ static volatile sig_atomic_t interrupted = 0;
 static void handle_signal(int signal_number) { interrupted = signal_number; }
 
 struct signal_handler_state {
-  struct sigaction previous[sizeof(TERMINATION_SIGNALS) /
-                            sizeof(*TERMINATION_SIGNALS)];
+  struct sigaction
+      previous[sizeof(TERMINATION_SIGNALS) / sizeof(*TERMINATION_SIGNALS)];
   size_t installed;
 };
 

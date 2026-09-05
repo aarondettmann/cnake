@@ -188,8 +188,7 @@ static void test_command_reading(void) {
   struct terminal_state terminal;
   terminal_initialize_state(&terminal, NULL);
   char input;
-  CHECK_EQ(terminal_read_command_key(&terminal, &input),
-           TERMINAL_READ_ESCAPE);
+  CHECK_EQ(terminal_read_command_key(&terminal, &input), TERMINAL_READ_ESCAPE);
   CHECK_EQ(terminal_read_command_key(&terminal, &input), TERMINAL_READ_OK);
   CHECK_EQ(input, 'q');
   CHECK_EQ(terminal_read_command_key(&terminal, &input), TERMINAL_READ_EOF);

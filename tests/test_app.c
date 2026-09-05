@@ -71,10 +71,9 @@ static bool run_app_with_input_fd(const struct cli_options *options,
 
   fflush(stdout);
   fflush(stderr);
-  bool redirected =
-      dup2(input_fd, STDIN_FILENO) != -1 &&
-      dup2(fileno(output_capture), STDOUT_FILENO) != -1 &&
-      dup2(fileno(error_capture), STDERR_FILENO) != -1;
+  bool redirected = dup2(input_fd, STDIN_FILENO) != -1 &&
+                    dup2(fileno(output_capture), STDOUT_FILENO) != -1 &&
+                    dup2(fileno(error_capture), STDERR_FILENO) != -1;
   if (!redirected) {
     dup2(saved_stdin, STDIN_FILENO);
     dup2(saved_stdout, STDOUT_FILENO);
