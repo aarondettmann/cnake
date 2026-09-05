@@ -193,7 +193,9 @@ void game_step(struct game_state *game, enum direction direction) {
   bool spawn_snack = false;
   bool spawn_poison = false;
 
-  if (tile > TILE_EMPTY) {
+  /* The tail vacates its tile during this step, so only the rest of the body
+   * is a collision. */
+  if (tile > TILE_TAIL) {
     game->status = GAME_OVER_SNAKE;
   } else {
     switch (tile) {
@@ -216,6 +218,7 @@ void game_step(struct game_state *game, enum direction direction) {
       }
       break;
     case TILE_EMPTY:
+    case TILE_TAIL:
     case TILE_HEAD:
       break;
     }

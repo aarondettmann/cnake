@@ -11,7 +11,9 @@
 
 The game is won when the entire available board space is filled. Eating snacks
 increases the snake's length, while poison shortens it. Colliding with
-obstacles or consuming poison at the minimum length is fatal.
+obstacles, running into the snake's own body, or consuming poison at the minimum
+length is fatal. The tail moves out of the way in the same step, so moving onto
+it is safe.
 
 **Controls**
 

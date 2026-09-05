@@ -32,10 +32,11 @@ enum direction {
 
 /*
  * Negative values identify special tiles. Positive values are snake body
- * countdowns; the segment with value 1 is the tail.
+ * countdowns; the segment with value TILE_TAIL is the tail.
  */
 enum tile_type {
   TILE_EMPTY = 0,
+  TILE_TAIL = 1,
   TILE_HEAD = -1,
   TILE_OBSTACLE = -2,
   TILE_SNACK = -3,
