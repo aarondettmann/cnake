@@ -9,11 +9,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# The Makefile sets CFLAGS with "+=", so a CFLAGS given on the command line
-# replaces the defaults. Each job therefore repeats the default flags.
-env:
-  BASE_CFLAGS: -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror
-
 jobs:
   test:
     name: Test (${{ matrix.compiler }})
@@ -25,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build and test
-        run: make check CC=${{ matrix.compiler }} CFLAGS="$BASE_CFLAGS"
+        run: make check CC=${{ matrix.compiler }} CFLAGS="-O2 -Werror"
 
   sanitizers:
     name: Test (clang, ASan and UBSan)
@@ -33,11 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build and test
-        run: >
-          make check CC=clang
-          CFLAGS="-std=c11 -O1 -g -Wall -Wextra -Wpedantic -Werror
-          -fsanitize=address,undefined -fno-omit-frame-pointer"
-          LDFLAGS="-fsanitize=address,undefined"
+        run: make check-sanitize CC=clang CFLAGS="-O1 -Werror"
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1

@@ -71,6 +71,7 @@ static void test_state_initialization(void) {
   terminal_initialize_state(&terminal, &interrupted);
 
   CHECK(terminal.interrupted == &interrupted);
+  CHECK(terminal.resumed == 0);
   CHECK(!terminal.initialized);
   CHECK(!terminal.screen_active);
 }
@@ -189,9 +190,75 @@ static void test_command_reading(void) {
   terminal_initialize_state(&terminal, NULL);
   char input;
   CHECK_EQ(terminal_read_command_key(&terminal, &input), TERMINAL_READ_ESCAPE);
+  CHECK_EQ(input, 'A');
   CHECK_EQ(terminal_read_command_key(&terminal, &input), TERMINAL_READ_OK);
   CHECK_EQ(input, 'q');
   CHECK_EQ(terminal_read_command_key(&terminal, &input), TERMINAL_READ_EOF);
+
+  restore_stdin(saved_stdin);
+}
+
+/*
+ * Cursor keys arrive as CSI or SS3 sequences and report their final byte.
+ * Sequences with parameters and other escape sequences report '\0'. The
+ * non-CSI sequence comes last because it drains every byte that follows it.
+ */
+static void test_escape_sequence_reading(void) {
+  int saved_stdin = -1;
+  CHECK(redirect_stdin_from_text("\033OB\033[1;5C\033[3~\033x", &saved_stdin));
+  if (saved_stdin == -1)
+    return;
+
+  struct terminal_state terminal;
+  terminal_initialize_state(&terminal, NULL);
+  char input;
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_ESCAPE);
+  CHECK_EQ(input, 'B');
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_ESCAPE);
+  CHECK_EQ(input, '\0');
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_ESCAPE);
+  CHECK_EQ(input, '\0');
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_ESCAPE);
+  CHECK_EQ(input, '\0');
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_EOF);
+
+  restore_stdin(saved_stdin);
+}
+
+/* A lone ESC is an escape sequence without a final byte. */
+static void test_lone_escape_reading(void) {
+  int saved_stdin = -1;
+  CHECK(redirect_stdin_from_text("\033", &saved_stdin));
+  if (saved_stdin == -1)
+    return;
+
+  struct terminal_state terminal;
+  terminal_initialize_state(&terminal, NULL);
+  char input = 'x';
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_ESCAPE);
+  CHECK_EQ(input, '\0');
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_EOF);
+
+  restore_stdin(saved_stdin);
+}
+
+/* A resumption is reported once, before any further input is consumed. */
+static void test_resumed_reading(void) {
+  int saved_stdin = -1;
+  CHECK(redirect_stdin_from_text("q", &saved_stdin));
+  if (saved_stdin == -1)
+    return;
+
+  struct terminal_state terminal;
+  terminal_initialize_state(&terminal, NULL);
+  terminal_resume(&terminal);
+  CHECK(terminal.resumed != 0);
+
+  char input;
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_RESUMED);
+  CHECK(terminal.resumed == 0);
+  CHECK_EQ(terminal_read_key(&terminal, &input), TERMINAL_READ_OK);
+  CHECK_EQ(input, 'q');
 
   restore_stdin(saved_stdin);
 }
@@ -217,6 +284,9 @@ int main(void) {
   test_screen_lifecycle_without_input_mode();
   test_terminal_lifecycle();
   test_command_reading();
+  test_escape_sequence_reading();
+  test_lone_escape_reading();
+  test_resumed_reading();
   test_help_reading();
 
   return test_finish("terminal");

@@ -22,6 +22,8 @@ it is safe.
 |           k ^                |
 |       h <     > l            |
 |           j v                |
+|                              |
+|   also: arrow keys, wasd     |
 +------------------------------+
 | ? Show help                  |
 | v Toggle debug view          |
