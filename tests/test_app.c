@@ -182,6 +182,34 @@ static void test_play_requires_a_terminal(void) {
   free_result(&result);
 }
 
+static int count_occurrences(const char *text, const char *needle) {
+  int count = 0;
+  size_t needle_length = strlen(needle);
+
+  for (const char *cursor = strstr(text, needle); cursor != NULL;
+       cursor = strstr(cursor + needle_length, needle))
+    count++;
+
+  return count;
+}
+
+/* Poll the line settings until raw mode is on or off, one millisecond apart. */
+static bool wait_for_terminal_mode(int fd, bool raw, int attempts) {
+  for (int attempt = 0; attempt < attempts; attempt++) {
+    struct termios current;
+    if (tcgetattr(fd, &current) == 0 &&
+        ((current.c_lflag & (ICANON | ECHO)) == 0) == raw)
+      return true;
+
+    struct timespec delay = {
+        .tv_sec = 0,
+        .tv_nsec = 1000 * 1000,
+    };
+    nanosleep(&delay, NULL);
+  }
+  return false;
+}
+
 static void test_quit_restores_terminal(void) {
   int master = -1;
   int slave = -1;
@@ -201,21 +229,12 @@ static void test_quit_restores_terminal(void) {
   }
 
   if (writer == 0) {
-    for (int attempt = 0; attempt < 5000; attempt++) {
-      struct termios current;
-      if (tcgetattr(slave, &current) == 0 &&
-          (current.c_lflag & (ICANON | ECHO)) == 0) {
-        char quit = 'q';
-        _exit(write(master, &quit, 1) == 1 ? EXIT_SUCCESS : EXIT_FAILURE);
-      }
-
-      struct timespec delay = {
-          .tv_sec = 0,
-          .tv_nsec = 1000 * 1000,
-      };
-      nanosleep(&delay, NULL);
-    }
-    _exit(EXIT_FAILURE);
+    if (!wait_for_terminal_mode(slave, true, 5000))
+      _exit(EXIT_FAILURE);
+    /* Delete key (an escape sequence without a command), then quit. */
+    const char keys[] = "\033[3~q";
+    ssize_t written = write(master, keys, sizeof(keys) - 1);
+    _exit(written == (ssize_t)(sizeof(keys) - 1) ? EXIT_SUCCESS : EXIT_FAILURE);
   }
 
   struct cli_options options = test_options(4);
@@ -229,7 +248,8 @@ static void test_quit_restores_terminal(void) {
   CHECK(ran);
   if (ran) {
     CHECK_EQ(result.exit_status, APP_EXIT_OK);
-    CHECK(strstr(result.output, "Command [?]:") != NULL);
+    CHECK(strstr(result.output, "Move [hjkl] / Help [?] / Quit [q]:") != NULL);
+    CHECK(strstr(result.output, "Unknown command. Press ? for help.") != NULL);
     CHECK(strstr(result.output, "\033[H") != NULL);
     CHECK(strstr(result.output, "\033[0J") != NULL);
     CHECK(strstr(result.output, "\033[H\033[0J") == NULL);
@@ -288,21 +308,9 @@ static void test_signal_restores_terminal(int signal_number) {
   }
 
   if (signaler == 0) {
-    for (int attempt = 0; attempt < 5000; attempt++) {
-      struct termios current;
-      if (tcgetattr(slave, &current) == 0 &&
-          (current.c_lflag & (ICANON | ECHO)) == 0) {
-        _exit(kill(getppid(), signal_number) == 0 ? EXIT_SUCCESS
-                                                  : EXIT_FAILURE);
-      }
-
-      struct timespec delay = {
-          .tv_sec = 0,
-          .tv_nsec = 1000 * 1000,
-      };
-      nanosleep(&delay, NULL);
-    }
-    _exit(EXIT_FAILURE);
+    if (!wait_for_terminal_mode(slave, true, 5000))
+      _exit(EXIT_FAILURE);
+    _exit(kill(getppid(), signal_number) == 0 ? EXIT_SUCCESS : EXIT_FAILURE);
   }
 
   struct cli_options options = test_options(4);
@@ -341,6 +349,122 @@ static void test_signal_restores_terminal(int signal_number) {
   }
 
   close(master);
+}
+
+/*
+ * Ctrl-Z must hand a normal terminal back to the shell and redraw the game once
+ * the process continues. The helper process sends SIGTSTP, waits until the
+ * line settings are restored, sends SIGCONT, waits for direct input mode to be
+ * back and then quits the game. A process whose group is orphaned is not
+ * stopped by SIGTSTP; the short wait for the restored settings then times out
+ * and the rest of the sequence still applies.
+ */
+static void test_suspend_restores_and_redraws(void) {
+  const char *enter_screen = "\033[?1049h\033[?25l";
+  const char *leave_screen = "\033[?25h\033[?1049l";
+  int master = -1;
+  int slave = -1;
+  CHECK(open_terminal_pair(&master, &slave));
+  if (master == -1 || slave == -1)
+    return;
+
+  struct termios original;
+  CHECK(tcgetattr(slave, &original) != -1);
+
+  int saved_stdin = dup(STDIN_FILENO);
+  int saved_stdout = dup(STDOUT_FILENO);
+  CHECK(saved_stdin != -1);
+  CHECK(saved_stdout != -1);
+  if (saved_stdin == -1 || saved_stdout == -1) {
+    if (saved_stdin != -1)
+      close(saved_stdin);
+    if (saved_stdout != -1)
+      close(saved_stdout);
+    close(slave);
+    close(master);
+    return;
+  }
+
+  fflush(stdout);
+  CHECK(dup2(slave, STDIN_FILENO) != -1);
+  CHECK(dup2(slave, STDOUT_FILENO) != -1);
+
+  pid_t helper = fork();
+  CHECK(helper != -1);
+  if (helper == -1) {
+    dup2(saved_stdin, STDIN_FILENO);
+    dup2(saved_stdout, STDOUT_FILENO);
+    close(saved_stdin);
+    close(saved_stdout);
+    close(slave);
+    close(master);
+    return;
+  }
+
+  if (helper == 0) {
+    if (!wait_for_terminal_mode(slave, true, 5000))
+      _exit(EXIT_FAILURE);
+    if (kill(getppid(), SIGTSTP) != 0)
+      _exit(EXIT_FAILURE);
+    /* A real stop restores the settings at once; a discarded one never does. */
+    (void)wait_for_terminal_mode(slave, false, 500);
+    if (kill(getppid(), SIGCONT) != 0)
+      _exit(EXIT_FAILURE);
+    if (!wait_for_terminal_mode(slave, true, 5000))
+      _exit(EXIT_FAILURE);
+    char quit = 'q';
+    _exit(write(master, &quit, 1) == 1 ? EXIT_SUCCESS : EXIT_FAILURE);
+  }
+
+  struct cli_options options = test_options(4);
+  int exit_status = app_run(&options);
+  fflush(stdout);
+
+  CHECK(dup2(saved_stdin, STDIN_FILENO) != -1);
+  CHECK(dup2(saved_stdout, STDOUT_FILENO) != -1);
+  close(saved_stdin);
+  close(saved_stdout);
+
+  int helper_status;
+  CHECK(waitpid(helper, &helper_status, 0) == helper);
+  CHECK(WIFEXITED(helper_status));
+  CHECK_EQ(WEXITSTATUS(helper_status), EXIT_SUCCESS);
+  CHECK_EQ(exit_status, APP_EXIT_OK);
+
+  struct termios restored;
+  CHECK(tcgetattr(slave, &restored) != -1);
+  CHECK_EQ(restored.c_lflag, original.c_lflag);
+
+  close(slave);
+  char output[16384] = {0};
+  size_t output_size = 0;
+  ssize_t bytes_read;
+  while (output_size < sizeof(output) - 1 &&
+         (bytes_read = read(master, output + output_size,
+                            sizeof(output) - output_size - 1)) > 0)
+    output_size += (size_t)bytes_read;
+  close(master);
+
+  CHECK(output_size > 0);
+  if (output_size == 0)
+    return;
+  output[output_size] = '\0';
+
+  /* Screen entered, left for the shell, entered again, left on quit. */
+  const char *sequence[] = {enter_screen, leave_screen, enter_screen,
+                            leave_screen};
+  const char *cursor = output;
+  for (size_t index = 0; index < sizeof(sequence) / sizeof(*sequence);
+       index++) {
+    const char *found = cursor == NULL ? NULL : strstr(cursor, sequence[index]);
+    CHECK(found != NULL);
+    cursor = found == NULL ? NULL : found + strlen(sequence[index]);
+  }
+  CHECK_EQ(count_occurrences(output, enter_screen), 2);
+  CHECK_EQ(count_occurrences(output, leave_screen), 2);
+
+  /* The board was drawn once at the start and once more after resuming. */
+  CHECK_EQ(count_occurrences(output, " CNAKE "), 2);
 }
 
 /*
@@ -432,6 +556,7 @@ int main(void) {
   test_play_requires_a_terminal();
   test_error_is_visible_after_screen_restore();
   test_quit_restores_terminal();
+  test_suspend_restores_and_redraws();
   test_signal_restores_terminal(SIGINT);
   test_signal_restores_terminal(SIGTERM);
   test_signal_restores_terminal(SIGHUP);

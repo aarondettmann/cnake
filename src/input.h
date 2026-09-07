@@ -25,6 +25,7 @@ enum replay_command {
 };
 
 enum player_command input_parse_player_command(char input);
+enum player_command input_parse_escape_command(char final_byte);
 enum replay_command input_parse_replay_command(char input);
 
 #endif

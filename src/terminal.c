@@ -16,15 +16,9 @@ void terminal_initialize_state(struct terminal_state *terminal,
   };
 }
 
-/*
- * Screen switching bypasses stdio, so pending buffered output has to be pushed
- * out first. Otherwise it would surface on whichever screen happens to be
- * active when stdio flushes next.
- */
-static bool write_stdout(const char *text) {
+/* Write the whole text with write(2); safe to call from a signal handler. */
+static bool write_all(const char *text) {
   size_t remaining = strlen(text);
-
-  fflush(stdout);
 
   while (remaining > 0) {
     ssize_t written = write(STDOUT_FILENO, text, remaining);
@@ -43,6 +37,16 @@ static bool write_stdout(const char *text) {
   return true;
 }
 
+/*
+ * Screen switching bypasses stdio, so pending buffered output has to be pushed
+ * out first. Otherwise it would surface on whichever screen happens to be
+ * active when stdio flushes next.
+ */
+static bool write_stdout(const char *text) {
+  fflush(stdout);
+  return write_all(text);
+}
+
 bool terminal_enter_screen(struct terminal_state *terminal) {
   if (terminal->screen_active || !isatty(STDOUT_FILENO))
     return true;
@@ -56,6 +60,15 @@ bool terminal_enter_screen(struct terminal_state *terminal) {
   return false;
 }
 
+static bool apply_raw_settings(const struct terminal_state *terminal) {
+  struct termios raw = terminal->original;
+  raw.c_lflag &= ~(tcflag_t)(ICANON | ECHO);
+  raw.c_cc[VMIN] = 1;
+  raw.c_cc[VTIME] = 0;
+
+  return tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) != -1;
+}
+
 bool terminal_enter_raw_mode(struct terminal_state *terminal) {
   if (!isatty(STDIN_FILENO))
     return false;
@@ -63,12 +76,7 @@ bool terminal_enter_raw_mode(struct terminal_state *terminal) {
   if (tcgetattr(STDIN_FILENO, &terminal->original) == -1)
     return false;
 
-  struct termios raw = terminal->original;
-  raw.c_lflag &= ~(ICANON | ECHO);
-  raw.c_cc[VMIN] = 1;
-  raw.c_cc[VTIME] = 0;
-
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
+  if (!apply_raw_settings(terminal))
     return false;
 
   terminal->initialized = true;
@@ -90,6 +98,28 @@ unsigned int terminal_restore(struct terminal_state *terminal) {
   return failures;
 }
 
+/*
+ * Suspension hands the terminal back to the shell and takes it again once the
+ * process continues. Both functions are called from a signal handler, so they
+ * only use async-signal-safe calls and leave stdio buffers untouched; the
+ * initialized and screen_active flags stay set so that terminal_restore still
+ * knows what to undo.
+ */
+void terminal_suspend(struct terminal_state *terminal) {
+  if (terminal->screen_active)
+    write_all(LEAVE_ALTERNATE_SCREEN);
+  if (terminal->initialized)
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal->original);
+}
+
+void terminal_resume(struct terminal_state *terminal) {
+  if (terminal->initialized)
+    apply_raw_settings(terminal);
+  if (terminal->screen_active)
+    write_all(ENTER_ALTERNATE_SCREEN);
+  terminal->resumed = 1;
+}
+
 static bool terminal_interrupted(const struct terminal_state *terminal) {
   return terminal->interrupted != NULL && *terminal->interrupted != 0;
 }
@@ -97,12 +127,17 @@ static bool terminal_interrupted(const struct terminal_state *terminal) {
 /*
  * Read one byte from standard input. A negative timeout blocks indefinitely.
  * A timeout and end of input have the same result because callers consume both
- * as the absence of another byte.
+ * as the absence of another byte. The resumed flag is reported but not cleared
+ * here, so a resumption noticed in the middle of an escape sequence is still
+ * reported by the next read_key call.
  */
 static enum terminal_read_status
 read_stdin_byte(const struct terminal_state *terminal, char *input,
                 int timeout_ms) {
   while (true) {
+    if (terminal->resumed)
+      return TERMINAL_READ_RESUMED;
+
     fd_set read_fds;
     FD_ZERO(&read_fds);
     FD_SET(STDIN_FILENO, &read_fds);
@@ -146,22 +181,37 @@ read_stdin_byte(const struct terminal_state *terminal, char *input,
   }
 }
 
-static void discard_escape_sequence(const struct terminal_state *terminal) {
-  char input;
-  enum terminal_read_status status = read_stdin_byte(terminal, &input, 10);
+/*
+ * Consume the rest of an escape sequence that started with ESC. CSI (ESC [) and
+ * SS3 (ESC O) sequences end with a byte in the range '@' to '~'; that byte is
+ * stored in *input when no parameter or intermediate bytes preceded it, which
+ * is the shape of the cursor key sequences. Anything else, including a lone
+ * ESC, stores '\0'.
+ */
+static void read_escape_sequence(const struct terminal_state *terminal,
+                                 char *input) {
+  char byte;
 
-  if (status != TERMINAL_READ_OK)
+  *input = '\0';
+
+  if (read_stdin_byte(terminal, &byte, 10) != TERMINAL_READ_OK)
     return;
 
-  if (input != '[' && input != 'O') {
-    while (read_stdin_byte(terminal, &input, 5) == TERMINAL_READ_OK)
+  if (byte != '[' && byte != 'O') {
+    while (read_stdin_byte(terminal, &byte, 5) == TERMINAL_READ_OK)
       ;
     return;
   }
 
-  do {
-    status = read_stdin_byte(terminal, &input, 5);
-  } while (status == TERMINAL_READ_OK && (input < '@' || input > '~'));
+  bool parameters_seen = false;
+  while (read_stdin_byte(terminal, &byte, 5) == TERMINAL_READ_OK) {
+    if (byte >= '@' && byte <= '~') {
+      if (!parameters_seen)
+        *input = byte;
+      return;
+    }
+    parameters_seen = true;
+  }
 }
 
 static enum terminal_read_status read_key(struct terminal_state *terminal,
@@ -170,12 +220,14 @@ static enum terminal_read_status read_key(struct terminal_state *terminal,
 
   do {
     status = read_stdin_byte(terminal, input, -1);
+    if (status == TERMINAL_READ_RESUMED)
+      terminal->resumed = 0;
     if (status != TERMINAL_READ_OK)
       return status;
   } while (skip_newlines && (*input == '\n' || *input == '\r'));
 
   if (*input == '\033') {
-    discard_escape_sequence(terminal);
+    read_escape_sequence(terminal, input);
     return TERMINAL_READ_ESCAPE;
   }
 

@@ -1,50 +1,50 @@
 _cnake()
 {
-    local current="${COMP_WORDS[COMP_CWORD]}"
-    local options="--help --version --ascii --monochrome --seed"
-    local board_sizes="4 5 6 7 8 9 10"
-    local board_size_seen=false
-    local seed_seen=false
-    local expect_seed=false
-    local index word
+  local current="${COMP_WORDS[COMP_CWORD]}"
+  local options="--help --version --ascii --monochrome --seed"
+  local board_sizes="4 5 6 7 8 9 10"
+  local board_size_seen=false
+  local seed_seen=false
+  local expect_seed=false
+  local index word
 
-    for ((index = 1; index < COMP_CWORD; index++)); do
-        word="${COMP_WORDS[index]}"
-
-        if $expect_seed; then
-            expect_seed=false
-            continue
-        fi
-
-        case "$word" in
-            --seed)
-                seed_seen=true
-                expect_seed=true
-                ;;
-            --*)
-                ;;
-            *)
-                board_size_seen=true
-                ;;
-        esac
-    done
+  for ((index = 1; index < COMP_CWORD; index++)); do
+    word="${COMP_WORDS[index]}"
 
     if $expect_seed; then
-        COMPREPLY=()
-        return
+      expect_seed=false
+      continue
     fi
 
-    if $seed_seen; then
-        options="${options/--seed/}"
-    fi
+    case "$word" in
+      --seed)
+        seed_seen=true
+        expect_seed=true
+        ;;
+      --*)
+        ;;
+      *)
+        board_size_seen=true
+        ;;
+    esac
+  done
 
-    if [[ "$current" == --* ]]; then
-        COMPREPLY=($(compgen -W "$options" -- "$current"))
-    elif $board_size_seen; then
-        COMPREPLY=($(compgen -W "$options" -- "$current"))
-    else
-        COMPREPLY=($(compgen -W "$board_sizes $options" -- "$current"))
-    fi
+  if $expect_seed; then
+    COMPREPLY=()
+    return
+  fi
+
+  if $seed_seen; then
+    options="${options/--seed/}"
+  fi
+
+  if [[ "$current" == --* ]]; then
+    COMPREPLY=($(compgen -W "$options" -- "$current"))
+  elif $board_size_seen; then
+    COMPREPLY=($(compgen -W "$options" -- "$current"))
+  else
+    COMPREPLY=($(compgen -W "$board_sizes $options" -- "$current"))
+  fi
 }
 
 complete -F _cnake cnake

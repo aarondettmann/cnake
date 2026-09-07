@@ -313,7 +313,7 @@ static void test_prompt_transitions(void) {
   if (output != NULL) {
     CHECK(output_is_ascii(output));
     CHECK_EQ(count_occurrences(output, "\033[1A"), 4);
-    CHECK_EQ(count_occurrences(output, "Command "), 3);
+    CHECK_EQ(count_occurrences(output, "Move "), 3);
     CHECK_EQ(count_occurrences(output, "Retry "), 6);
     CHECK(strstr(output, "\r\033[2K\r\n\033[2K\r") != NULL);
     CHECK(strstr(output, "\r\033[1A\r\033[2K") != NULL);
@@ -321,7 +321,7 @@ static void test_prompt_transitions(void) {
     char *plain_output = strip_ansi(output);
     CHECK(plain_output != NULL);
     if (plain_output != NULL) {
-      CHECK(strstr(plain_output, "Command [?]:") != NULL);
+      CHECK(strstr(plain_output, "Move [hjkl] / Help [?] / Quit [q]:") != NULL);
       CHECK(strstr(plain_output, "Retry [r] / Quit [q]:") != NULL);
       CHECK(strstr(plain_output, "x Unknown command. Press ? for help.") !=
             NULL);
@@ -431,7 +431,7 @@ static void test_rendered_rows_clear_stale_suffixes(void) {
   char *message_output = capture_ui_output(&game, &ui, CAPTURE_MESSAGES);
   CHECK(message_output != NULL);
   if (message_output != NULL) {
-    CHECK_EQ(count_occurrences(message_output, "\033[0K\n"), 10);
+    CHECK_EQ(count_occurrences(message_output, "\033[0K\n"), 12);
     free(message_output);
   }
 

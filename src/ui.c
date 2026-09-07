@@ -619,6 +619,8 @@ static const char *const HELP_DIAGRAM_ROWS[] = {
     "          k ^",
     "      h <     > l",
     "          j v",
+    "",
+    "  also: arrow keys, wasd",
 };
 
 static const char *help_arrow_glyph(char symbol, const struct ui_theme *theme) {
@@ -636,6 +638,13 @@ static const char *help_arrow_glyph(char symbol, const struct ui_theme *theme) {
   }
 }
 
+/* A movement key is drawn as a single letter surrounded by spaces. */
+static bool is_help_movement_key(const char *row, const char *symbol) {
+  return strchr("hjkl", *symbol) != NULL &&
+         (symbol == row || symbol[-1] == ' ') &&
+         (symbol[1] == '\0' || symbol[1] == ' ');
+}
+
 static void print_help_diagram_row(const char *row,
                                    const struct ui_theme *theme,
                                    const struct ui_style *style) {
@@ -649,7 +658,7 @@ static void print_help_diagram_row(const char *row,
 
     if (glyph != NULL)
       color = style->green;
-    else if (strchr("hjkl", *symbol) != NULL)
+    else if (is_help_movement_key(row, symbol))
       color = style->yellow;
 
     if (color != NULL && color != active_color) {
@@ -763,7 +772,8 @@ static void print_input_prompt(enum ui_prompt prompt,
   print_command_prompt(theme, style);
 
   if (prompt == UI_PROMPT_COMMAND) {
-    printf("Command %s[?]%s: ", style->dim, style->reset);
+    printf("Move %s[hjkl]%s / Help %s[?]%s / Quit %s[q]%s: ", style->dim,
+           style->reset, style->dim, style->reset, style->dim, style->reset);
   } else if (prompt == UI_PROMPT_REPLAY) {
     printf("Retry %s[r]%s / Quit %s[q]%s: ", style->dim, style->reset,
            style->dim, style->reset);

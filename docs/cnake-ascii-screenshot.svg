@@ -52,7 +52,7 @@
 <text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">+-------------+</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">+--------------------+</tspan></text>
 </svg>
 <svg height="14.4" overflow="hidden" width="302.4" y="172.8">
-<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7">&gt; </tspan><tspan fill="#dcdfe4">Command </tspan><tspan fill="#dcdfe4" opacity="0.5">[?]</tspan><tspan fill="#dcdfe4">: </tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7">&gt; </tspan><tspan fill="#dcdfe4">Move </tspan><tspan fill="#dcdfe4" opacity="0.5">[hjkl]</tspan><tspan> </tspan><tspan fill="#dcdfe4">/ </tspan><tspan fill="#dcdfe4">Help </tspan><tspan fill="#dcdfe4" opacity="0.5">[?]</tspan><tspan> </tspan><tspan fill="#dcdfe4">/ </tspan><tspan fill="#dcdfe4">Quit </tspan><tspan fill="#dcdfe4" opacity="0.5">[q]</tspan><tspan fill="#dcdfe4">: </tspan></text>
 </svg>
 </g>
 </svg>

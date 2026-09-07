@@ -5,17 +5,23 @@
 #include "terminal.h"
 #include "ui.h"
 
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
-static const int TERMINATION_SIGNALS[] = {SIGINT, SIGTERM, SIGHUP, SIGQUIT};
-
 enum command_action {
   COMMAND_REDRAW = 0,
   COMMAND_QUIT,
   COMMAND_SHOW_HELP,
+};
+
+/* Outcome of waiting for a key press. */
+enum key_status {
+  KEY_PRESSED = 0,
+  KEY_REDRAW,
+  KEY_STOP,
 };
 
 /*
@@ -37,31 +43,79 @@ struct app_context {
 
 static volatile sig_atomic_t interrupted = 0;
 
-static void handle_signal(int signal_number) { interrupted = signal_number; }
+/* The terminal to hand back to the shell while the process is suspended. */
+static struct terminal_state *suspendable_terminal = NULL;
+
+static void handle_termination(int signal_number) {
+  interrupted = signal_number;
+}
+
+/*
+ * Ctrl-Z arrives as SIGTSTP. The terminal is restored before the process
+ * stops, so the shell gets a normal screen back, and taken again once the
+ * process continues. The stop itself comes from re-raising the signal with the
+ * default disposition, which returns only after SIGCONT. Every call in here is
+ * async-signal-safe.
+ */
+static void handle_suspension(int signal_number) {
+  int saved_errno = errno;
+  struct terminal_state *terminal = suspendable_terminal;
+  struct sigaction default_action = {0};
+  struct sigaction previous_action;
+  sigset_t signal_set;
+
+  if (terminal != NULL)
+    terminal_suspend(terminal);
+
+  default_action.sa_handler = SIG_DFL;
+  sigemptyset(&default_action.sa_mask);
+  sigaction(signal_number, &default_action, &previous_action);
+
+  sigemptyset(&signal_set);
+  sigaddset(&signal_set, signal_number);
+  sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
+  raise(signal_number);
+  sigprocmask(SIG_BLOCK, &signal_set, NULL);
+
+  sigaction(signal_number, &previous_action, NULL);
+  if (terminal != NULL)
+    terminal_resume(terminal);
+
+  errno = saved_errno;
+}
+
+static const struct {
+  int number;
+  void (*handler)(int);
+} HANDLED_SIGNALS[] = {
+    {SIGINT, handle_termination}, {SIGTERM, handle_termination},
+    {SIGHUP, handle_termination}, {SIGQUIT, handle_termination},
+    {SIGTSTP, handle_suspension},
+};
+
+#define HANDLED_SIGNAL_COUNT                                                   \
+  (sizeof(HANDLED_SIGNALS) / sizeof(*HANDLED_SIGNALS))
 
 struct signal_handler_state {
-  struct sigaction
-      previous[sizeof(TERMINATION_SIGNALS) / sizeof(*TERMINATION_SIGNALS)];
+  struct sigaction previous[HANDLED_SIGNAL_COUNT];
   size_t installed;
 };
 
 static void restore_signal_handlers(struct signal_handler_state *state) {
   while (state->installed > 0) {
     state->installed--;
-    sigaction(TERMINATION_SIGNALS[state->installed],
+    sigaction(HANDLED_SIGNALS[state->installed].number,
               &state->previous[state->installed], NULL);
   }
 }
 
 static bool install_signal_handlers(struct signal_handler_state *state) {
-  struct sigaction action = {0};
-  action.sa_handler = handle_signal;
-  sigemptyset(&action.sa_mask);
+  for (size_t index = 0; index < HANDLED_SIGNAL_COUNT; index++) {
+    struct sigaction action = {0};
+    action.sa_handler = HANDLED_SIGNALS[index].handler;
+    sigemptyset(&action.sa_mask);
 
-  for (size_t index = 0;
-       index < sizeof(TERMINATION_SIGNALS) / sizeof(*TERMINATION_SIGNALS);
-       index++) {
-    if (sigaction(TERMINATION_SIGNALS[index], &action,
+    if (sigaction(HANDLED_SIGNALS[index].number, &action,
                   &state->previous[index]) == -1) {
       restore_signal_handlers(state);
       return false;
@@ -138,12 +192,16 @@ static enum command_action apply_player_command(struct app_context *app,
 }
 
 /*
- * Wait for one key press. Escape sequences are swallowed, and every reason to
- * stop reading - a signal, end of input, a read error - reports false, so
- * callers only have to handle the key they asked for.
+ * Wait for one key press. Every reason to stop reading - a signal, end of
+ * input, a read error - reports KEY_STOP, and a suspension that ended reports
+ * KEY_REDRAW so the caller can repaint the screen the shell has overwritten.
+ * An escape sequence counts as a key press: the key holds the final byte of
+ * the sequence and the escape flag is set, so every prompt treats cursor keys
+ * and unknown sequences the same way it treats plain characters.
  */
-static bool read_key_or_quit(struct app_context *app, bool skip_newlines,
-                             char *key) {
+static enum key_status read_key_or_quit(struct app_context *app,
+                                        bool skip_newlines, char *key,
+                                        bool *escape) {
   while (!interrupted) {
     enum terminal_read_status status =
         skip_newlines ? terminal_read_command_key(app->terminal, key)
@@ -151,37 +209,60 @@ static bool read_key_or_quit(struct app_context *app, bool skip_newlines,
 
     switch (status) {
     case TERMINAL_READ_OK:
-      return true;
+      *escape = false;
+      return KEY_PRESSED;
     case TERMINAL_READ_ESCAPE:
-      continue;
+      *escape = true;
+      return KEY_PRESSED;
+    case TERMINAL_READ_RESUMED:
+      return KEY_REDRAW;
     case TERMINAL_READ_EOF:
-      return false;
+      return KEY_STOP;
     case TERMINAL_READ_ERROR:
       fail(app, APP_EXIT_COMMAND_ERROR, "Unable to read a command.");
-      return false;
+      return KEY_STOP;
     }
   }
 
-  return false;
+  return KEY_STOP;
 }
 
 /* Command prompts ignore a bare Enter; the help screen closes on any key. */
-static bool read_command_key_or_quit(struct app_context *app, char *key) {
-  return read_key_or_quit(app, true, key);
+static enum key_status read_command_key_or_quit(struct app_context *app,
+                                                char *key, bool *escape) {
+  return read_key_or_quit(app, true, key, escape);
 }
 
-static bool read_any_key_or_quit(struct app_context *app, char *key) {
-  return read_key_or_quit(app, false, key);
+static enum key_status read_any_key_or_quit(struct app_context *app, char *key,
+                                            bool *escape) {
+  return read_key_or_quit(app, false, key, escape);
+}
+
+static void draw_board(const struct app_context *app) {
+  ui_begin_frame();
+  ui_print_header(app->seed, app->game->board_size, app->ui);
+  ui_draw_game_board(app->game, app->ui);
 }
 
 static enum command_action read_player_action(struct app_context *app) {
   char input;
+  bool escape;
 
   ui_render_command_prompt(app->ui, app->feedback, false, false);
   app->feedback = UI_FEEDBACK_NONE;
 
-  while (read_command_key_or_quit(app, &input)) {
-    enum player_command command = input_parse_player_command(input);
+  while (true) {
+    switch (read_command_key_or_quit(app, &input, &escape)) {
+    case KEY_STOP:
+      return COMMAND_QUIT;
+    case KEY_REDRAW:
+      return COMMAND_REDRAW;
+    case KEY_PRESSED:
+      break;
+    }
+
+    enum player_command command = escape ? input_parse_escape_command(input)
+                                         : input_parse_player_command(input);
     if (command == PLAYER_COMMAND_INVALID) {
       ui_render_command_prompt(app->ui, UI_FEEDBACK_NONE, true, true);
       continue;
@@ -193,29 +274,32 @@ static enum command_action read_player_action(struct app_context *app) {
       app->feedback = UI_FEEDBACK_ANSWER;
     return action;
   }
-
-  return COMMAND_QUIT;
 }
 
 static enum command_action show_help(struct app_context *app) {
   char input;
+  bool escape;
 
-  ui_render_help(app->ui);
-  ui_render_help_prompt(app->ui);
+  while (true) {
+    ui_render_help(app->ui);
+    ui_render_help_prompt(app->ui);
 
-  if (!read_any_key_or_quit(app, &input))
-    return COMMAND_QUIT;
-
-  return input == 'q' ? COMMAND_QUIT : COMMAND_REDRAW;
+    switch (read_any_key_or_quit(app, &input, &escape)) {
+    case KEY_STOP:
+      return COMMAND_QUIT;
+    case KEY_REDRAW:
+      continue;
+    case KEY_PRESSED:
+      return !escape && input == 'q' ? COMMAND_QUIT : COMMAND_REDRAW;
+    }
+  }
 }
 
 static enum command_action play_game(struct app_context *app) {
   app->feedback = UI_FEEDBACK_NONE;
 
   while (!interrupted) {
-    ui_begin_frame();
-    ui_print_header(app->seed, app->game->board_size, app->ui);
-    ui_draw_game_board(app->game, app->ui);
+    draw_board(app);
 
     if (app->game->status != GAME_RUNNING)
       return COMMAND_REDRAW;
@@ -232,18 +316,29 @@ static enum command_action play_game(struct app_context *app) {
 
 static enum replay_command read_replay_command(struct app_context *app) {
   char input;
+  bool escape;
 
   ui_render_replay_prompt(app->ui, app->game->status, false, false);
 
-  while (read_command_key_or_quit(app, &input)) {
-    enum replay_command command = input_parse_replay_command(input);
+  while (true) {
+    switch (read_command_key_or_quit(app, &input, &escape)) {
+    case KEY_STOP:
+      return REPLAY_COMMAND_QUIT;
+    case KEY_REDRAW:
+      draw_board(app);
+      ui_render_replay_prompt(app->ui, app->game->status, false, false);
+      continue;
+    case KEY_PRESSED:
+      break;
+    }
+
+    enum replay_command command =
+        escape ? REPLAY_COMMAND_INVALID : input_parse_replay_command(input);
     if (command != REPLAY_COMMAND_INVALID)
       return command;
 
     ui_render_replay_prompt(app->ui, app->game->status, true, true);
   }
-
-  return REPLAY_COMMAND_QUIT;
 }
 
 /*
@@ -308,6 +403,7 @@ int app_run(const struct cli_options *options) {
   ui_initialize_state(&ui, options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
                       options->monochrome);
   terminal_initialize_state(&terminal, &interrupted);
+  suspendable_terminal = &terminal;
 
   if (!install_signal_handlers(&signal_handlers)) {
     fail(&app, APP_EXIT_TERMINAL_ERROR, "Unable to install signal handler.");
@@ -337,5 +433,6 @@ cleanup:
   }
   game_destroy(&game);
   restore_signal_handlers(&signal_handlers);
+  suspendable_terminal = NULL;
   return app.exit_status;
 }
