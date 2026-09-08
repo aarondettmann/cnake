@@ -1,6 +1,5 @@
 #define _XOPEN_SOURCE 600
 
-#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -37,31 +36,6 @@ static bool redirect_stdin_from_text(const char *input, int *saved_stdin) {
 static void restore_stdin(int saved_stdin) {
   CHECK(dup2(saved_stdin, STDIN_FILENO) != -1);
   close(saved_stdin);
-}
-
-static bool open_terminal_pair(int *master, int *slave) {
-  *master = posix_openpt(O_RDWR | O_NOCTTY);
-  if (*master == -1)
-    return false;
-
-  if (grantpt(*master) == -1 || unlockpt(*master) == -1) {
-    close(*master);
-    return false;
-  }
-
-  char *slave_name = ptsname(*master);
-  if (slave_name == NULL) {
-    close(*master);
-    return false;
-  }
-
-  *slave = open(slave_name, O_RDWR | O_NOCTTY);
-  if (*slave == -1) {
-    close(*master);
-    return false;
-  }
-
-  return true;
 }
 
 static void test_state_initialization(void) {

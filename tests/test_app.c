@@ -1,6 +1,5 @@
 #define _XOPEN_SOURCE 600
 
-#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -19,23 +18,6 @@ struct app_result {
   char *output;
   char *error;
 };
-
-static char *read_capture(FILE *capture) {
-  if (fseek(capture, 0, SEEK_END) != 0)
-    return NULL;
-
-  long size = ftell(capture);
-  if (size < 0 || fseek(capture, 0, SEEK_SET) != 0)
-    return NULL;
-
-  char *text = malloc((size_t)size + 1);
-  if (text == NULL)
-    return NULL;
-
-  size_t bytes_read = fread(text, 1, (size_t)size, capture);
-  text[bytes_read] = '\0';
-  return text;
-}
 
 static bool run_app_with_input_fd(const struct cli_options *options,
                                   int input_fd, struct app_result *result) {
@@ -126,31 +108,6 @@ static bool run_app(const struct cli_options *options, const char *input,
   return ran;
 }
 
-static bool open_terminal_pair(int *master, int *slave) {
-  *master = posix_openpt(O_RDWR | O_NOCTTY);
-  if (*master == -1)
-    return false;
-
-  if (grantpt(*master) == -1 || unlockpt(*master) == -1) {
-    close(*master);
-    return false;
-  }
-
-  char *slave_name = ptsname(*master);
-  if (slave_name == NULL) {
-    close(*master);
-    return false;
-  }
-
-  *slave = open(slave_name, O_RDWR | O_NOCTTY);
-  if (*slave == -1) {
-    close(*master);
-    return false;
-  }
-
-  return true;
-}
-
 static void free_result(struct app_result *result) {
   free(result->output);
   free(result->error);
@@ -180,17 +137,6 @@ static void test_play_requires_a_terminal(void) {
   CHECK(strstr(result.error, "Unable to enable direct input mode.") != NULL);
 
   free_result(&result);
-}
-
-static int count_occurrences(const char *text, const char *needle) {
-  int count = 0;
-  size_t needle_length = strlen(needle);
-
-  for (const char *cursor = strstr(text, needle); cursor != NULL;
-       cursor = strstr(cursor + needle_length, needle))
-    count++;
-
-  return count;
 }
 
 /* Poll the line settings until raw mode is on or off, one millisecond apart. */

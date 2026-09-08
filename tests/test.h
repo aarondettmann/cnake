@@ -1,11 +1,24 @@
 #ifndef CNAKE_TEST_H
 #define CNAKE_TEST_H
 
+#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 
-static int test_check_count = 0;
-static int test_failure_count = 0;
+/* Counters and helpers shared by every test binary; defined in support.c. */
+extern int test_check_count;
+extern int test_failure_count;
+
+int test_finish(const char *suite_label);
+
+/* Open a pseudo-terminal pair. Both descriptors are owned by the caller. */
+bool open_terminal_pair(int *master, int *slave);
+
+/* Read the whole contents of a tmpfile() stream into a new NUL-terminated
+   buffer, or return NULL on failure. The stream is left at end of file. */
+char *read_capture(FILE *capture);
+
+/* Number of non-overlapping occurrences of needle in text. */
+int count_occurrences(const char *text, const char *needle);
 
 #define CHECK(condition)                                                       \
   do {                                                                         \
@@ -18,29 +31,14 @@ static int test_failure_count = 0;
 
 #define CHECK_EQ(actual, expected)                                             \
   do {                                                                         \
-    int actual_value = (actual);                                               \
-    int expected_value = (expected);                                           \
+    long long actual_value = (actual);                                         \
+    long long expected_value = (expected);                                     \
     test_check_count++;                                                        \
     if (actual_value != expected_value) {                                      \
-      fprintf(stderr, "FAIL %s:%d: expected %s == %d, got %d\n", __FILE__,     \
+      fprintf(stderr, "FAIL %s:%d: expected %s == %lld, got %lld\n", __FILE__, \
               __LINE__, #actual, expected_value, actual_value);                \
       test_failure_count++;                                                    \
     }                                                                          \
   } while (0)
-
-static int test_finish(const char *suite_label) {
-  if (test_failure_count != 0) {
-    fprintf(stderr, "%d of %d checks failed.\n", test_failure_count,
-            test_check_count);
-    return EXIT_FAILURE;
-  }
-
-  if (suite_label == NULL)
-    printf("Passed %d checks.\n", test_check_count);
-  else
-    printf("Passed %d %s checks.\n", test_check_count, suite_label);
-
-  return EXIT_SUCCESS;
-}
 
 #endif

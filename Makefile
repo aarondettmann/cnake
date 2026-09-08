@@ -23,21 +23,14 @@ SRC := src/main.c src/app.c src/cli.c src/game.c src/input.c src/terminal.c \
 	src/ui.c
 OBJ := $(SRC:src/%.c=$(OBJDIR)/%.o)
 DEPS := $(OBJ:.o=.d)
-TEST_GAME_BIN := $(OBJDIR)/test_game
-TEST_CLI_BIN := $(OBJDIR)/test_cli
-TEST_UI_BIN := $(OBJDIR)/test_ui
-TEST_INPUT_BIN := $(OBJDIR)/test_input
-TEST_TERMINAL_BIN := $(OBJDIR)/test_terminal
-TEST_APP_BIN := $(OBJDIR)/test_app
-TEST_BINS := $(TEST_GAME_BIN) $(TEST_CLI_BIN) $(TEST_UI_BIN) $(TEST_INPUT_BIN) \
-	$(TEST_TERMINAL_BIN) $(TEST_APP_BIN)
-TEST_OBJ := $(OBJDIR)/tests/test_game.o $(OBJDIR)/tests/test_cli.o \
-	$(OBJDIR)/tests/test_ui.o $(OBJDIR)/tests/test_input.o \
-	$(OBJDIR)/tests/test_terminal.o $(OBJDIR)/tests/test_app.o
+TESTS := game cli ui input terminal app
+TEST_BINS := $(TESTS:%=$(OBJDIR)/test_%)
+TEST_OBJ := $(TESTS:%=$(OBJDIR)/tests/test_%.o) $(OBJDIR)/tests/support.o
 TEST_DEPS := $(TEST_OBJ:.o=.d)
 DEPFLAGS = -MMD -MP
 
 .PHONY: all clean check check-sanitize install uninstall
+.SECONDARY: $(TEST_OBJ)
 
 all: cnake
 
@@ -56,33 +49,21 @@ $(OBJDIR)/tests/%.o: tests/%.c
 	@mkdir -p "$(dir $@)"
 	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) -Isrc $(DEPFLAGS) -c -o $@ $<
 
-$(TEST_GAME_BIN): $(OBJDIR)/game.o $(OBJDIR)/tests/test_game.o
+# Every test binary links its own object, the shared support object and the
+# production objects listed as extra prerequisites below.
+$(OBJDIR)/test_%: $(OBJDIR)/tests/test_%.o $(OBJDIR)/tests/support.o
 	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(TEST_CLI_BIN): $(OBJDIR)/cli.o $(OBJDIR)/tests/test_cli.o
-	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-
-$(TEST_UI_BIN): $(OBJDIR)/game.o $(OBJDIR)/ui.o $(OBJDIR)/tests/test_ui.o
-	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-
-$(TEST_INPUT_BIN): $(OBJDIR)/input.o $(OBJDIR)/tests/test_input.o
-	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-
-$(TEST_TERMINAL_BIN): $(OBJDIR)/terminal.o $(OBJDIR)/tests/test_terminal.o
-	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-
-$(TEST_APP_BIN): $(OBJDIR)/app.o $(OBJDIR)/cli.o $(OBJDIR)/game.o \
-	$(OBJDIR)/input.o $(OBJDIR)/terminal.o $(OBJDIR)/ui.o \
-	$(OBJDIR)/tests/test_app.o
-	$(CC) $(CPPFLAGS) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+$(OBJDIR)/test_game: $(OBJDIR)/game.o
+$(OBJDIR)/test_cli: $(OBJDIR)/cli.o
+$(OBJDIR)/test_ui: $(OBJDIR)/game.o $(OBJDIR)/ui.o
+$(OBJDIR)/test_input: $(OBJDIR)/input.o
+$(OBJDIR)/test_terminal: $(OBJDIR)/terminal.o
+$(OBJDIR)/test_app: $(OBJDIR)/app.o $(OBJDIR)/cli.o $(OBJDIR)/game.o \
+	$(OBJDIR)/input.o $(OBJDIR)/terminal.o $(OBJDIR)/ui.o
 
 check: cnake $(TEST_BINS)
-	./$(TEST_GAME_BIN)
-	./$(TEST_CLI_BIN)
-	./$(TEST_UI_BIN)
-	./$(TEST_INPUT_BIN)
-	./$(TEST_TERMINAL_BIN)
-	./$(TEST_APP_BIN)
+	for test in $(TEST_BINS); do ./$$test || exit 1; done
 	bash -n completions/cnake
 	test "$$(./cnake --version)" = "cnake $(CNAKE_VERSION)"
 	./cnake --help | grep -F -- "--ascii" >/dev/null
