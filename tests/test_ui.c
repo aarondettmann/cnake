@@ -99,25 +99,7 @@ static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
   }
   close(saved_stdout);
 
-  if (fseek(capture, 0, SEEK_END) != 0) {
-    fclose(capture);
-    return NULL;
-  }
-
-  long output_size = ftell(capture);
-  if (output_size < 0 || fseek(capture, 0, SEEK_SET) != 0) {
-    fclose(capture);
-    return NULL;
-  }
-
-  char *output = malloc((size_t)output_size + 1);
-  if (output == NULL) {
-    fclose(capture);
-    return NULL;
-  }
-
-  size_t bytes_read = fread(output, 1, (size_t)output_size, capture);
-  output[bytes_read] = '\0';
+  char *output = read_capture(capture);
   fclose(capture);
   return output;
 }
@@ -148,17 +130,6 @@ static bool has_ansi_sgr(const char *input) {
   }
 
   return false;
-}
-
-static int count_occurrences(const char *text, const char *needle) {
-  int count = 0;
-
-  while ((text = strstr(text, needle)) != NULL) {
-    count++;
-    text += strlen(needle);
-  }
-
-  return count;
 }
 
 static char *strip_ansi(const char *input) {
