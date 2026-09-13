@@ -182,6 +182,34 @@ static bool line_contains_both(const char *text, const char *left,
   return false;
 }
 
+/*
+ * Compare the length of rendered lines. ASCII output has one byte per column,
+ * so byte length equals display width.
+ */
+static bool lines_have_equal_length(const char *text, int first_line,
+                                    int line_count) {
+  const char *cursor = text;
+  size_t expected = 0;
+
+  for (int index = 0; index < first_line + line_count; index++) {
+    const char *line_end = strchr(cursor, '\n');
+    if (line_end == NULL)
+      return false;
+
+    if (index >= first_line) {
+      size_t length = (size_t)(line_end - cursor);
+      if (index == first_line)
+        expected = length;
+      else if (length != expected)
+        return false;
+    }
+
+    cursor = line_end + 1;
+  }
+
+  return true;
+}
+
 static void test_ascii_board_rendering(void) {
   struct game_state game;
   if (!create_empty_game(&game, 6))
@@ -225,11 +253,15 @@ static void test_ascii_board_rendering(void) {
     CHECK(strstr(plain_output, " | . = > . . ! |") != NULL);
     CHECK(strstr(plain_output, " | . * . # . . |") != NULL);
     const char *score_row = strstr(plain_output, "| +   Score       97 |");
+    const char *filled_row = strstr(plain_output, "| %   Filled    5/36 |");
     const char *snake_row = strstr(plain_output, "Snake");
     CHECK(score_row != NULL);
+    CHECK(filled_row != NULL);
     CHECK(snake_row != NULL);
-    CHECK(score_row < snake_row);
-    CHECK(strstr(plain_output, "#   Obstacle") != NULL);
+    CHECK(filled_row < snake_row);
+    CHECK(snake_row < score_row);
+    /* The obstacle count is fixed at setup and no longer has a row. */
+    CHECK(strstr(plain_output, "Obstacle") == NULL);
     CHECK(strstr(plain_output, " SCORE ") == NULL);
   }
 
@@ -399,6 +431,22 @@ static void test_rendered_rows_clear_stale_suffixes(void) {
     free(board_output);
   }
 
+  /*
+   * The status panel keeps all its rows on boards shorter than itself, so a
+   * small board renders as many lines as a board the height of the panel.
+   */
+  struct game_state small_game;
+  if (create_empty_game(&small_game, 4)) {
+    char *small_output = capture_ui_output(&small_game, &ui, CAPTURE_BOARD);
+    CHECK(small_output != NULL);
+    if (small_output != NULL) {
+      CHECK_EQ(count_occurrences(small_output, "\033[0K\n"), 10);
+      free(small_output);
+    }
+
+    game_destroy(&small_game);
+  }
+
   char *message_output = capture_ui_output(&game, &ui, CAPTURE_MESSAGES);
   CHECK(message_output != NULL);
   if (message_output != NULL) {
@@ -439,8 +487,47 @@ static void test_debug_panel_matches_main_layout(void) {
     CHECK(strstr(plain_output, "123") != NULL);
     CHECK(strstr(plain_output, "-10") != NULL);
     CHECK(strstr(plain_output, "   4") != NULL);
-    CHECK(line_contains_both(plain_output, "Score", "123"));
+    /* The first status row and the first debug row share a line. */
+    CHECK(line_contains_both(plain_output, "Filled", "123"));
   }
+
+  free(plain_output);
+  free(output);
+  game_destroy(&game);
+}
+
+/*
+ * On a board shorter than the status panel, the board and debug columns run
+ * out of frame before the panel does and pad their columns instead.
+ */
+static void test_short_board_columns_are_padded(void) {
+  struct game_state game;
+  if (!create_empty_game(&game, 4))
+    return;
+
+  game.direction = DIRECTION_RIGHT;
+  game.length = 3;
+  game_set_board_tile(&game, 0, 0, TILE_HEAD);
+  game_set_board_tile(&game, 1, 1, TILE_OBSTACLE);
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_ASCII, true);
+  ui.show_debug = true;
+
+  char *output = capture_ui_output(&game, &ui, CAPTURE_BOARD);
+  CHECK(output != NULL);
+  if (output == NULL) {
+    game_destroy(&game);
+    return;
+  }
+
+  /* Three header lines, then the five status rows and the panel frame. */
+  CHECK_EQ(count_occurrences(output, "\033[0K\n"), 10);
+
+  char *plain_output = strip_ansi(output);
+  CHECK(plain_output != NULL);
+  if (plain_output != NULL)
+    CHECK(lines_have_equal_length(plain_output, 3, 7));
 
   free(plain_output);
   free(output);
@@ -482,7 +569,7 @@ static void test_unicode_debug_header_alignment(void) {
     CHECK(strstr(plain_output, " DEBUG · 4×4 ") == NULL);
     CHECK(strstr(plain_output, "★   Score       97") != NULL);
     /* The status panel keeps all its rows on boards shorter than the panel. */
-    CHECK(strstr(plain_output, "▣   Obstacle") != NULL);
+    CHECK(strstr(plain_output, "×   Poison") != NULL);
   }
 
   free(plain_output);
@@ -499,6 +586,7 @@ int main(void) {
   test_monochrome_suppresses_sgr();
   test_rendered_rows_clear_stale_suffixes();
   test_debug_panel_matches_main_layout();
+  test_short_board_columns_are_padded();
   test_unicode_debug_header_alignment();
 
   return test_finish("UI");

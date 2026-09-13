@@ -383,6 +383,31 @@ static void test_full_board_win_detection(void) {
   game_destroy(&game);
 }
 
+static void test_empty_tile_count(void) {
+  struct game_state game;
+  if (!create_game(&game, 4))
+    exit(EXIT_FAILURE);
+
+  clear_fixture(&game);
+  CHECK_EQ(game_empty_tile_count(&game), 16);
+
+  place_head(&game, 0, 0);
+  game_set_board_tile(&game, 1, 0, TILE_SNACK);
+  game_set_board_tile(&game, 2, 0, TILE_OBSTACLE);
+  game_set_board_tile(&game, 3, 0, 2);
+  CHECK_EQ(game_empty_tile_count(&game), 12);
+  CHECK_EQ(game_empty_tile_count(&game), count_tiles(&game, TILE_EMPTY));
+
+  for (int y = 0; y < game.board_size; y++) {
+    for (int x = 0; x < game.board_size; x++)
+      game_set_board_tile(&game, x, y, TILE_OBSTACLE);
+  }
+
+  CHECK_EQ(game_empty_tile_count(&game), 0);
+
+  game_destroy(&game);
+}
+
 static void test_score_rewards_snacks_and_efficiency(void) {
   struct game_state game;
   game_initialize_state(&game);
@@ -424,6 +449,7 @@ int main(void) {
   test_nonfatal_poison_shrink_and_respawn();
   test_manual_growth();
   test_full_board_win_detection();
+  test_empty_tile_count();
   test_score_rewards_snacks_and_efficiency();
 
   return test_finish(NULL);
