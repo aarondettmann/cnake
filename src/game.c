@@ -118,17 +118,6 @@ bool game_initialize_board(struct game_state *game) {
   return place_tile(game, TILE_POISON) && place_tile(game, TILE_SNACK);
 }
 
-static bool board_contains_value(const struct game_state *game, int value) {
-  int tile_count = game->board_size * game->board_size;
-
-  for (int index = 0; index < tile_count; index++) {
-    if (game->board[index] == value)
-      return true;
-  }
-
-  return false;
-}
-
 /*
  * Store the current length at the old head, then decrement every positive
  * board value. The countdown naturally removes the tail at zero.
@@ -155,7 +144,7 @@ static void respawn_tile_if_needed(struct game_state *game, bool should_respawn,
     return;
 
   if (!place_tile(game, type))
-    assert(!board_contains_value(game, TILE_EMPTY));
+    assert(game_empty_tile_count(game) == 0);
 }
 
 static void move_head(struct game_state *game, enum direction direction) {
@@ -231,8 +220,20 @@ void game_step(struct game_state *game, enum direction direction) {
   respawn_tile_if_needed(game, spawn_snack, TILE_SNACK);
   respawn_tile_if_needed(game, spawn_poison, TILE_POISON);
 
-  if (!board_contains_value(game, TILE_EMPTY))
+  if (game_empty_tile_count(game) == 0)
     game->status = GAME_WON;
+}
+
+int game_empty_tile_count(const struct game_state *game) {
+  int tile_count = game->board_size * game->board_size;
+  int empty_count = 0;
+
+  for (int index = 0; index < tile_count; index++) {
+    if (game->board[index] == TILE_EMPTY)
+      empty_count++;
+  }
+
+  return empty_count;
 }
 
 int game_score(const struct game_state *game) {

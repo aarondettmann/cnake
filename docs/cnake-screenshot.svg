@@ -34,8 +34,8 @@
 <text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#96d58a">▶ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan></text>
 <text textLength="0.6em" x="6.6em" xml:space="preserve" y="0.96em"><tspan fill="#edc273">✦</tspan></text>
 <text xml:space="preserve" y="0.96em"><tspan>             </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan></text>
-<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#edc273">★</tspan></text>
-<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Score </tspan><tspan>       </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#3ae1f7">▦</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Filled </tspan><tspan>   </tspan><tspan fill="#dcdfe4">7/36 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
 </svg>
 <svg height="14.4" overflow="hidden" width="302.4" y="72">
 <text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#ee82ee">× </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan><tspan fill="#96d58a">●●▶</tspan><tspan> </tspan><tspan fill="#dcdfe4">Snake </tspan><tspan>       </tspan><tspan fill="#dcdfe4">1 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
@@ -44,18 +44,18 @@
 <text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan></text>
 <text textLength="0.6em" x="1.8em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
 <text xml:space="preserve" y="0.96em"><tspan>     </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan></text>
-<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#edc273">✦</tspan></text>
-<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Snack </tspan><tspan>       </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#edc273">★</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Score </tspan><tspan>       </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
 </svg>
 <svg height="14.4" overflow="hidden" width="302.4" y="100.8">
 <text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan></text>
 <text textLength="0.6em" x="6.6em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
-<text xml:space="preserve" y="0.96em"><tspan>             </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan><tspan fill="#ee82ee">×</tspan><tspan>   </tspan><tspan fill="#dcdfe4">Poison </tspan><tspan>      </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>             </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan></text>
+<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#edc273">✦</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Snack </tspan><tspan>       </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
 </svg>
 <svg height="14.4" overflow="hidden" width="302.4" y="115.2">
-<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan></text>
-<text textLength="0.6em" x="12.6em" xml:space="preserve" y="0.96em"><tspan fill="#84c8ff">▣</tspan></text>
-<text xml:space="preserve" y="0.96em"><tspan>                         </tspan><tspan fill="#dcdfe4">Obstacle </tspan><tspan>    </tspan><tspan fill="#dcdfe4">4 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
+<text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#dcdfe4" opacity="0.5">· </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan>   </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan><tspan> </tspan><tspan fill="#ee82ee">×</tspan><tspan>   </tspan><tspan fill="#dcdfe4">Poison </tspan><tspan>      </tspan><tspan fill="#dcdfe4">0 </tspan><tspan fill="#3ae1f7" opacity="0.5">│</tspan></text>
 </svg>
 <svg height="14.4" overflow="hidden" width="302.4" y="129.6">
 <text xml:space="preserve" y="0.96em"><tspan> </tspan><tspan fill="#3ae1f7" opacity="0.5">│ </tspan></text>

@@ -1,5 +1,6 @@
 #include "ui.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -7,8 +8,18 @@
 #define STATUS_INNER_WIDTH 20
 #define STATUS_DEBUG_GAP_WIDTH 3
 
-/* Score, snake, snack, poison and obstacle rows. */
+/* Filled, snake, score, snack and poison rows. */
 #define STATUS_ROW_COUNT 5
+
+/*
+ * The filled row prints "<filled>/<total>" right-aligned in this field. Both
+ * numbers hold at most three digits while a board has fewer than 1000 tiles,
+ * which leaves "999/999" and one separating space.
+ */
+#define STATUS_FILLED_FIELD_WIDTH 8
+
+static_assert(MAX_BOARD_SIZE * MAX_BOARD_SIZE < 1000,
+              "the filled status row assumes at most three digits per number");
 
 /* Width of the help panel between its frame characters. */
 #define HELP_INNER_WIDTH 30
@@ -77,6 +88,7 @@ struct ui_theme {
   const char *snack;
   const char *poison;
   const char *score;
+  const char *fill;
   const char *top_left;
   const char *top_right;
   const char *bottom_left;
@@ -103,6 +115,7 @@ static const struct ui_theme UNICODE_THEME = {
     .snack = "✦",
     .poison = "×",
     .score = "★",
+    .fill = "▦",
     .top_left = "╭",
     .top_right = "╮",
     .bottom_left = "╰",
@@ -129,6 +142,7 @@ static const struct ui_theme ASCII_THEME = {
     .snack = "*",
     .poison = "!",
     .score = "+",
+    .fill = "%",
     .top_left = "+",
     .top_right = "+",
     .bottom_left = "+",
@@ -398,6 +412,22 @@ static void print_status_row(const struct game_state *game, int row,
 
   switch (row) {
   case 0: {
+    /* The board is won when no empty tile remains, so this row counts up to
+     * the total tile count. */
+    int tile_count = game->board_size * game->board_size;
+    /* Sized for any int pair; the field width is what constrains display. */
+    char filled_text[sizeof("-2147483648/-2147483648")];
+    snprintf(filled_text, sizeof(filled_text), "%d/%d",
+             tile_count - game_empty_tile_count(game), tile_count);
+    printf(" %s%s%s   Filled%*s ", style->cyan, theme->fill, style->reset,
+           STATUS_FILLED_FIELD_WIDTH, filled_text);
+    break;
+  }
+  case 1:
+    printf(" %s%s%s%s%s Snake     %4d ", style->green, theme->body, theme->body,
+           theme->head_right, style->reset, game->length);
+    break;
+  case 2: {
     int score = game_score(game);
     printf(" %s%s%s   Score ", style->yellow, theme->score, style->reset);
     if (score == ANSWER_SCORE)
@@ -406,21 +436,13 @@ static void print_status_row(const struct game_state *game, int row,
       printf("%8d ", score);
     break;
   }
-  case 1:
-    printf(" %s%s%s%s%s Snake     %4d ", style->green, theme->body, theme->body,
-           theme->head_right, style->reset, game->length);
-    break;
-  case 2:
+  case 3:
     printf(" %s%s%s   Snack     %4d ", style->yellow, theme->snack,
            style->reset, game->stats.snacks);
     break;
-  case 3:
+  case 4:
     printf(" %s%s%s   Poison    %4d ", style->magenta, theme->poison,
            style->reset, game->stats.poison);
-    break;
-  case 4:
-    printf(" %s%s%s   Obstacle  %4d ", style->blue, theme->obstacle,
-           style->reset, game->obstacle_count);
     break;
   default:
     printf("%*s", STATUS_INNER_WIDTH, "");
