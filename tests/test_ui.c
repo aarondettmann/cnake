@@ -387,6 +387,46 @@ static void test_answer_score_is_yellow(void) {
   game_destroy(&game);
 }
 
+/*
+ * Styling depends on the stream and on NO_COLOR, so the check runs against a
+ * pseudo-terminal and a regular file.
+ */
+static void test_styling_detection(void) {
+  int master = -1;
+  int slave = -1;
+  CHECK(open_terminal_pair(&master, &slave));
+  if (master == -1 || slave == -1)
+    return;
+
+  FILE *terminal_stream = fdopen(slave, "w");
+  FILE *file_stream = tmpfile();
+  CHECK(terminal_stream != NULL);
+  CHECK(file_stream != NULL);
+
+  if (terminal_stream != NULL && file_stream != NULL) {
+    CHECK(unsetenv("NO_COLOR") == 0);
+    CHECK(ui_styling_supported(terminal_stream));
+    CHECK(!ui_styling_supported(file_stream));
+
+    CHECK(setenv("NO_COLOR", "1", 1) == 0);
+    CHECK(!ui_styling_supported(terminal_stream));
+
+    /* An empty value does not request unstyled output. */
+    CHECK(setenv("NO_COLOR", "", 1) == 0);
+    CHECK(ui_styling_supported(terminal_stream));
+
+    CHECK(unsetenv("NO_COLOR") == 0);
+  }
+
+  if (file_stream != NULL)
+    fclose(file_stream);
+  if (terminal_stream != NULL)
+    fclose(terminal_stream);
+  else
+    close(slave);
+  close(master);
+}
+
 static void test_monochrome_suppresses_sgr(void) {
   struct game_state game;
   if (!create_empty_game(&game, 6))
@@ -584,6 +624,7 @@ int main(void) {
   test_unicode_theme_strings();
   test_answer_score_is_yellow();
   test_monochrome_suppresses_sgr();
+  test_styling_detection();
   test_rendered_rows_clear_stale_suffixes();
   test_debug_panel_matches_main_layout();
   test_short_board_columns_are_padded();

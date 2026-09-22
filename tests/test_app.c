@@ -223,6 +223,9 @@ static void test_signal_restores_terminal(int signal_number) {
   struct termios original;
   CHECK(tcgetattr(slave, &original) != -1);
 
+  struct terminal_drain drain;
+  CHECK(start_terminal_drain(master, slave, &drain));
+
   int saved_stdin = dup(STDIN_FILENO);
   int saved_stdout = dup(STDOUT_FILENO);
   CHECK(saved_stdin != -1);
@@ -232,7 +235,7 @@ static void test_signal_restores_terminal(int signal_number) {
       close(saved_stdin);
     if (saved_stdout != -1)
       close(saved_stdout);
-    close(slave);
+    free(finish_terminal_drain(&drain, slave));
     close(master);
     return;
   }
@@ -248,7 +251,7 @@ static void test_signal_restores_terminal(int signal_number) {
     dup2(saved_stdout, STDOUT_FILENO);
     close(saved_stdin);
     close(saved_stdout);
-    close(slave);
+    free(finish_terminal_drain(&drain, slave));
     close(master);
     return;
   }
@@ -278,23 +281,15 @@ static void test_signal_restores_terminal(int signal_number) {
   CHECK(tcgetattr(slave, &restored) != -1);
   CHECK_EQ(restored.c_lflag, original.c_lflag);
 
-  close(slave);
-  char output[16384] = {0};
-  size_t output_size = 0;
-  ssize_t bytes_read;
-  while (output_size < sizeof(output) - 1 &&
-         (bytes_read = read(master, output + output_size,
-                            sizeof(output) - output_size - 1)) > 0)
-    output_size += (size_t)bytes_read;
+  char *output = finish_terminal_drain(&drain, slave);
+  close(master);
 
-  CHECK(output_size > 0);
-  if (output_size > 0) {
-    output[output_size] = '\0';
+  CHECK(output != NULL);
+  if (output != NULL) {
     CHECK(strstr(output, enter_screen) != NULL);
     CHECK(strstr(output, leave_screen) != NULL);
+    free(output);
   }
-
-  close(master);
 }
 
 /*
@@ -317,6 +312,9 @@ static void test_suspend_restores_and_redraws(void) {
   struct termios original;
   CHECK(tcgetattr(slave, &original) != -1);
 
+  struct terminal_drain drain;
+  CHECK(start_terminal_drain(master, slave, &drain));
+
   int saved_stdin = dup(STDIN_FILENO);
   int saved_stdout = dup(STDOUT_FILENO);
   CHECK(saved_stdin != -1);
@@ -326,7 +324,7 @@ static void test_suspend_restores_and_redraws(void) {
       close(saved_stdin);
     if (saved_stdout != -1)
       close(saved_stdout);
-    close(slave);
+    free(finish_terminal_drain(&drain, slave));
     close(master);
     return;
   }
@@ -342,7 +340,7 @@ static void test_suspend_restores_and_redraws(void) {
     dup2(saved_stdout, STDOUT_FILENO);
     close(saved_stdin);
     close(saved_stdout);
-    close(slave);
+    free(finish_terminal_drain(&drain, slave));
     close(master);
     return;
   }
@@ -381,20 +379,12 @@ static void test_suspend_restores_and_redraws(void) {
   CHECK(tcgetattr(slave, &restored) != -1);
   CHECK_EQ(restored.c_lflag, original.c_lflag);
 
-  close(slave);
-  char output[16384] = {0};
-  size_t output_size = 0;
-  ssize_t bytes_read;
-  while (output_size < sizeof(output) - 1 &&
-         (bytes_read = read(master, output + output_size,
-                            sizeof(output) - output_size - 1)) > 0)
-    output_size += (size_t)bytes_read;
+  char *output = finish_terminal_drain(&drain, slave);
   close(master);
 
-  CHECK(output_size > 0);
-  if (output_size == 0)
+  CHECK(output != NULL);
+  if (output == NULL)
     return;
-  output[output_size] = '\0';
 
   /* Screen entered, left for the shell, entered again, left on quit. */
   const char *sequence[] = {enter_screen, leave_screen, enter_screen,
@@ -411,6 +401,8 @@ static void test_suspend_restores_and_redraws(void) {
 
   /* The board was drawn once at the start and once more after resuming. */
   CHECK_EQ(count_occurrences(output, " CNAKE "), 2);
+
+  free(output);
 }
 
 /*
@@ -426,10 +418,13 @@ static void test_error_is_visible_after_screen_restore(void) {
   if (master == -1 || slave == -1)
     return;
 
+  struct terminal_drain drain;
+  CHECK(start_terminal_drain(master, slave, &drain));
+
   int input_pipe[2];
   CHECK(pipe(input_pipe) != -1);
   if (input_pipe[0] == -1) {
-    close(slave);
+    free(finish_terminal_drain(&drain, slave));
     close(master);
     return;
   }
@@ -449,7 +444,7 @@ static void test_error_is_visible_after_screen_restore(void) {
     if (saved_stderr != -1)
       close(saved_stderr);
     close(input_pipe[0]);
-    close(slave);
+    free(finish_terminal_drain(&drain, slave));
     close(master);
     return;
   }
@@ -475,27 +470,21 @@ static void test_error_is_visible_after_screen_restore(void) {
 
   CHECK_EQ(exit_status, APP_EXIT_TERMINAL_ERROR);
 
-  close(slave);
-  char output[16384] = {0};
-  size_t output_size = 0;
-  ssize_t bytes_read;
-  while (output_size < sizeof(output) - 1 &&
-         (bytes_read = read(master, output + output_size,
-                            sizeof(output) - output_size - 1)) > 0)
-    output_size += (size_t)bytes_read;
+  char *output = finish_terminal_drain(&drain, slave);
   close(master);
 
-  CHECK(output_size > 0);
-  if (output_size == 0)
+  CHECK(output != NULL);
+  if (output == NULL)
     return;
 
-  output[output_size] = '\0';
   const char *left_screen = strstr(output, leave_screen);
   const char *error_message = strstr(output, error_text);
   CHECK(left_screen != NULL);
   CHECK(error_message != NULL);
   if (left_screen != NULL && error_message != NULL)
     CHECK(error_message > left_screen);
+
+  free(output);
 }
 
 int main(void) {

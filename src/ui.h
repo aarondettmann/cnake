@@ -7,6 +7,7 @@
 #define CNAKE_UI_H
 
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "game.h"
 
@@ -30,6 +31,7 @@ enum ui_feedback {
   UI_FEEDBACK_ANSWER,
 };
 
+bool ui_styling_supported(FILE *stream);
 void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
                          bool monochrome);
 const char *ui_error_label(const struct ui_state *ui);

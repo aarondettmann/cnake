@@ -59,6 +59,9 @@ static void test_screen_lifecycle_without_input_mode(void) {
   if (master == -1 || slave == -1)
     return;
 
+  struct terminal_drain drain;
+  CHECK(start_terminal_drain(master, slave, &drain));
+
   int saved_stdout = dup(STDOUT_FILENO);
   CHECK(saved_stdout != -1);
   fflush(stdout);
@@ -70,24 +73,21 @@ static void test_screen_lifecycle_without_input_mode(void) {
   CHECK(!terminal.initialized);
   CHECK(terminal.screen_active);
 
-  char screen_output[32] = {0};
-  ssize_t bytes_read = read(master, screen_output, strlen(enter_screen));
-  CHECK_EQ(bytes_read, (ssize_t)strlen(enter_screen));
-  CHECK(memcmp(screen_output, enter_screen, strlen(enter_screen)) == 0);
-
   CHECK(terminal_restore(&terminal) == TERMINAL_RESTORE_OK);
   CHECK(!terminal.initialized);
   CHECK(!terminal.screen_active);
 
-  memset(screen_output, 0, sizeof(screen_output));
-  bytes_read = read(master, screen_output, strlen(leave_screen));
-  CHECK_EQ(bytes_read, (ssize_t)strlen(leave_screen));
-  CHECK(memcmp(screen_output, leave_screen, strlen(leave_screen)) == 0);
-
   CHECK(dup2(saved_stdout, STDOUT_FILENO) != -1);
   close(saved_stdout);
-  close(slave);
+  char *output = finish_terminal_drain(&drain, slave);
   close(master);
+  CHECK(output != NULL);
+  if (output != NULL) {
+    const char *entered = strstr(output, enter_screen);
+    CHECK(entered != NULL);
+    CHECK(entered != NULL && strstr(entered, leave_screen) != NULL);
+    free(output);
+  }
 }
 
 static void test_terminal_lifecycle(void) {
@@ -101,6 +101,9 @@ static void test_terminal_lifecycle(void) {
 
   struct termios original;
   CHECK(tcgetattr(slave, &original) != -1);
+
+  struct terminal_drain drain;
+  CHECK(start_terminal_drain(master, slave, &drain));
 
   int saved_stdin = dup(STDIN_FILENO);
   int saved_stdout = dup(STDOUT_FILENO);
@@ -116,11 +119,6 @@ static void test_terminal_lifecycle(void) {
   CHECK(!terminal.initialized);
   CHECK(terminal.screen_active);
 
-  char screen_output[32] = {0};
-  ssize_t bytes_read = read(master, screen_output, strlen(enter_screen));
-  CHECK_EQ(bytes_read, (ssize_t)strlen(enter_screen));
-  CHECK(memcmp(screen_output, enter_screen, strlen(enter_screen)) == 0);
-
   CHECK(terminal_enter_raw_mode(&terminal));
   CHECK(terminal.initialized);
   CHECK(terminal.screen_active);
@@ -135,11 +133,6 @@ static void test_terminal_lifecycle(void) {
   CHECK(!terminal.initialized);
   CHECK(!terminal.screen_active);
 
-  memset(screen_output, 0, sizeof(screen_output));
-  bytes_read = read(master, screen_output, strlen(leave_screen));
-  CHECK_EQ(bytes_read, (ssize_t)strlen(leave_screen));
-  CHECK(memcmp(screen_output, leave_screen, strlen(leave_screen)) == 0);
-
   struct termios restored;
   CHECK(tcgetattr(STDIN_FILENO, &restored) != -1);
   CHECK_EQ(restored.c_lflag, original.c_lflag);
@@ -150,8 +143,15 @@ static void test_terminal_lifecycle(void) {
   restore_stdin(saved_stdin);
   CHECK(dup2(saved_stdout, STDOUT_FILENO) != -1);
   close(saved_stdout);
-  close(slave);
+  char *output = finish_terminal_drain(&drain, slave);
   close(master);
+  CHECK(output != NULL);
+  if (output != NULL) {
+    const char *entered = strstr(output, enter_screen);
+    CHECK(entered != NULL);
+    CHECK(entered != NULL && strstr(entered, leave_screen) != NULL);
+    free(output);
+  }
 }
 
 static void test_command_reading(void) {

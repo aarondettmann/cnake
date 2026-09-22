@@ -51,7 +51,7 @@ static int print_cli_error(enum cli_parse_status status,
                            const char *program_name) {
   struct ui_state ui;
   ui_initialize_state(&ui, options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
-                      options->monochrome);
+                      options->monochrome || !ui_styling_supported(stderr));
   const char *error_label = ui_error_label(&ui);
 
   switch (status) {

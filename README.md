@@ -64,6 +64,10 @@ Options:
 
 Options and the board size can appear in any order.
 
+ANSI text styling is disabled automatically when the output stream is not a
+terminal, and when the `NO_COLOR` environment variable is set to a non-empty
+value. `--monochrome` disables it unconditionally.
+
 The seed reproduces the same board and subsequent random tile placements when
 using the same C library implementation. A seeded game replays the same board on
 every retry; without `--seed`, each retry starts from a new board.
@@ -91,6 +95,27 @@ make uninstall PREFIX="$HOME/.local"
 Packagers can stage an installation by setting `DESTDIR`.
 
 Remove the compiled binary and `build/` artifacts with `make clean`.
+
+## Tests
+
+Build the game and every test binary, run the test suites and check the
+command-line interface:
+
+```bash
+make check
+```
+
+Repeat the same checks against a build instrumented with AddressSanitizer and
+UndefinedBehaviorSanitizer, in a separate object directory:
+
+```bash
+make check-sanitize
+```
+
+Both targets accept the usual variables, for example `make check CC=clang
+CFLAGS="-O2 -Werror"`. Continuous integration runs `make check` with GCC and
+Clang on Linux and with Clang on macOS, `make check-sanitize` on Linux, and
+verifies the formatting with `clang-format`.
 
 ## License
 
