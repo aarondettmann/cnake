@@ -386,8 +386,10 @@ static void run_games(struct app_context *app) {
 int app_run(const struct cli_options *options) {
   struct game_state game;
   struct ui_state ui;
+  struct ui_state diagnostics_ui;
   struct terminal_state terminal;
   struct signal_handler_state signal_handlers = {0};
+  enum ui_mode mode = options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE;
   struct app_context app = {
       .game = &game,
       .ui = &ui,
@@ -400,8 +402,14 @@ int app_run(const struct cli_options *options) {
 
   interrupted = 0;
   game_initialize_state(&game);
-  ui_initialize_state(&ui, options->ascii ? UI_MODE_ASCII : UI_MODE_UNICODE,
-                      options->monochrome);
+  /*
+   * The board is written to standard output and diagnostics to standard error.
+   * Styling is determined separately for each of the two streams.
+   */
+  ui_initialize_state(&ui, mode,
+                      options->monochrome || !ui_styling_supported(stdout));
+  ui_initialize_state(&diagnostics_ui, mode,
+                      options->monochrome || !ui_styling_supported(stderr));
   terminal_initialize_state(&terminal, &interrupted);
   suspendable_terminal = &terminal;
 
@@ -424,9 +432,9 @@ int app_run(const struct cli_options *options) {
   run_games(&app);
 
 cleanup:
-  restore_terminal(&terminal, &ui);
+  restore_terminal(&terminal, &diagnostics_ui);
   if (app.error_message != NULL)
-    print_error(&ui, app.error_message);
+    print_error(&diagnostics_ui, app.error_message);
   if (interrupted) {
     app.exit_status = 128 + interrupted;
     ui_print_interrupted_exit(&ui);

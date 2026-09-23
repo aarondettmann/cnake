@@ -11,20 +11,32 @@ concurrency:
 
 jobs:
   test:
-    name: Test (${{ matrix.compiler }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }}, ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    # A test that blocks on a terminal would otherwise run until the six-hour
+    # default, so every job fails fast instead.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
+      # On macOS the gcc command is a Clang driver, so it adds no coverage.
       matrix:
-        compiler: [gcc, clang]
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+          - os: ubuntu-latest
+            compiler: clang
+          - os: macos-latest
+            compiler: clang
     steps:
       - uses: actions/checkout@v7
       - name: Build and test
         run: make check CC=${{ matrix.compiler }} CFLAGS="-O2 -Werror"
 
+  # LeakSanitizer is unavailable on macOS, so this job stays on Linux.
   sanitizers:
     name: Test (clang, ASan and UBSan)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Build and test
@@ -36,6 +48,7 @@ jobs:
   format:
     name: Format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       # Pinned to the major version used for .clang-format; other versions may

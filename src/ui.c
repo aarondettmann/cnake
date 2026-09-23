@@ -2,7 +2,9 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define BOARD_STATUS_GAP_WIDTH 3
 #define STATUS_INNER_WIDTH 20
@@ -287,6 +289,22 @@ static void print_panel_bottom(int inner_width, const struct ui_theme *theme,
   printf("%s%s%s", style->dim, style->cyan, theme->bottom_left);
   print_repeated(theme->horizontal, inner_width);
   printf("%s", theme->bottom_right);
+}
+
+/*
+ * ANSI styling only applies to a terminal, so a redirected stream receives
+ * plain text. The NO_COLOR convention (https://no-color.org) suppresses styling
+ * as well: the variable takes effect when it is present and non-empty,
+ * whatever its value.
+ */
+bool ui_styling_supported(FILE *stream) {
+  const char *no_color = getenv("NO_COLOR");
+
+  if (no_color != NULL && *no_color != '\0')
+    return false;
+
+  int descriptor = fileno(stream);
+  return descriptor != -1 && isatty(descriptor);
 }
 
 void ui_initialize_state(struct ui_state *ui, enum ui_mode mode,
