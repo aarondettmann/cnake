@@ -246,6 +246,66 @@ static void test_moving_into_tail_is_allowed(void) {
   game_destroy(&game);
 }
 
+/*
+ * Moving straight back onto the segment behind the head is rejected and leaves
+ * the state unchanged. Every other move into the body stays fatal.
+ */
+static void test_reversal_into_body_is_rejected(void) {
+  struct game_state game;
+  if (!create_game(&game, 4))
+    exit(EXIT_FAILURE);
+
+  clear_fixture(&game);
+  game.length = 3;
+  game.direction = DIRECTION_RIGHT;
+  place_head(&game, 2, 0);
+  game_set_board_tile(&game, 1, 0, 2);
+  game_set_board_tile(&game, 0, 0, TILE_TAIL);
+
+  CHECK(!game_step(&game, DIRECTION_LEFT));
+
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game.direction, DIRECTION_RIGHT);
+  CHECK_EQ(game.stats.moves, 0);
+  CHECK_EQ(game.head.x, 2);
+  CHECK_EQ(game.head.y, 0);
+  CHECK_EQ(game_board_tile(&game, 2, 0), TILE_HEAD);
+  CHECK_EQ(game_board_tile(&game, 1, 0), 2);
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_TAIL);
+
+  CHECK(game_step(&game, DIRECTION_DOWN));
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game.stats.moves, 1);
+
+  /* The rejected direction is relative to the previous move, and the neck
+   * wraps around the board edge like every other tile. */
+  clear_fixture(&game);
+  game.length = 3;
+  game.direction = DIRECTION_UP;
+  place_head(&game, 1, 3);
+  game_set_board_tile(&game, 1, 0, 2);
+  game_set_board_tile(&game, 1, 1, TILE_TAIL);
+
+  CHECK(!game_step(&game, DIRECTION_DOWN));
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game.head.y, 3);
+
+  /* A body segment that is not directly behind the head is still fatal. */
+  clear_fixture(&game);
+  game.length = 5;
+  game.direction = DIRECTION_DOWN;
+  place_head(&game, 1, 1);
+  game_set_board_tile(&game, 1, 0, 4);
+  game_set_board_tile(&game, 2, 0, 3);
+  game_set_board_tile(&game, 2, 1, 2);
+  game_set_board_tile(&game, 2, 2, TILE_TAIL);
+
+  CHECK(game_step(&game, DIRECTION_RIGHT));
+  CHECK_EQ(game.status, GAME_OVER_SNAKE);
+
+  game_destroy(&game);
+}
+
 static void test_obstacle_collision(void) {
   struct game_state game;
   if (!create_game(&game, 4))
@@ -443,6 +503,7 @@ int main(void) {
   test_tail_countdown_and_removal();
   test_self_collision();
   test_moving_into_tail_is_allowed();
+  test_reversal_into_body_is_rejected();
   test_obstacle_collision();
   test_fatal_poison_collision();
   test_snack_growth_and_respawn();

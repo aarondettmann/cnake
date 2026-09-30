@@ -29,6 +29,7 @@ enum ui_feedback {
   UI_FEEDBACK_DEBUG_OFF,
   UI_FEEDBACK_GROW,
   UI_FEEDBACK_ANSWER,
+  UI_FEEDBACK_REVERSAL,
 };
 
 bool ui_styling_supported(FILE *stream);
@@ -49,6 +50,8 @@ void ui_render_replay_prompt(const struct ui_state *ui, enum game_status status,
 void ui_render_help(const struct ui_state *ui);
 void ui_render_help_prompt(const struct ui_state *ui);
 enum ui_feedback ui_toggle_debug(struct ui_state *ui);
+void ui_print_summary(const struct game_state *game, unsigned int seed,
+                      const struct ui_state *ui);
 void ui_print_interrupted_exit(const struct ui_state *ui);
 
 #endif

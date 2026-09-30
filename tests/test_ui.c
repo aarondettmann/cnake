@@ -12,6 +12,7 @@ enum capture_surface {
   CAPTURE_BOARD,
   CAPTURE_MESSAGES,
   CAPTURE_PROMPTS,
+  CAPTURE_SUMMARIES,
   CAPTURE_ALL,
 };
 
@@ -38,6 +39,7 @@ static void render_messages(struct ui_state *ui) {
   ui_render_command_prompt(ui, debug_off, false, false);
   ui_render_command_prompt(ui, UI_FEEDBACK_GROW, false, false);
   ui_render_command_prompt(ui, UI_FEEDBACK_ANSWER, false, false);
+  ui_render_command_prompt(ui, UI_FEEDBACK_REVERSAL, false, false);
 
   ui_render_help(ui);
   ui_render_help_prompt(ui);
@@ -67,6 +69,23 @@ static void render_prompts(struct ui_state *ui) {
   }
 }
 
+/* One exit summary for every game status, in declaration order. */
+static void render_summaries(struct game_state *game, struct ui_state *ui) {
+  enum game_status saved_status = game->status;
+  const enum game_status statuses[] = {
+      GAME_RUNNING,       GAME_WON,         GAME_OVER_SNAKE,
+      GAME_OVER_OBSTACLE, GAME_OVER_POISON,
+  };
+
+  for (size_t index = 0; index < sizeof(statuses) / sizeof(*statuses);
+       index++) {
+    game->status = statuses[index];
+    ui_print_summary(game, 1729, ui);
+  }
+
+  game->status = saved_status;
+}
+
 static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
                                enum capture_surface surface) {
   FILE *capture = tmpfile();
@@ -90,6 +109,8 @@ static char *capture_ui_output(struct game_state *game, struct ui_state *ui,
     render_messages(ui);
   if (surface == CAPTURE_PROMPTS || surface == CAPTURE_ALL)
     render_prompts(ui);
+  if (surface == CAPTURE_SUMMARIES || surface == CAPTURE_ALL)
+    render_summaries(game, ui);
   fflush(stdout);
 
   if (dup2(saved_stdout, STDOUT_FILENO) == -1) {
@@ -449,9 +470,51 @@ static void test_monochrome_suppresses_sgr(void) {
     CHECK(strstr(output, " * Debug view on.") != NULL);
     CHECK(strstr(output, " ! Length +5.") != NULL);
     CHECK(strstr(output, " + The answer is snake.") != NULL);
+    CHECK(strstr(output, " ! Cannot reverse onto the body.") != NULL);
+    CHECK(strstr(output, " Game quit. Score") != NULL);
     free(output);
   }
 
+  game_destroy(&game);
+}
+
+static void test_exit_summary(void) {
+  struct game_state game;
+  if (!create_empty_game(&game, 6))
+    return;
+
+  game.length = 4;
+  game.stats.moves = 6;
+  game.stats.snacks = 4;
+  game.stats.poison = 1;
+  game_set_board_tile(&game, 0, 0, TILE_HEAD);
+  game_set_board_tile(&game, 1, 0, 3);
+  game_set_board_tile(&game, 2, 0, TILE_OBSTACLE);
+
+  struct ui_state ui;
+  ui_initialize_state(&ui, UI_MODE_UNICODE, false);
+
+  char *output = capture_ui_output(&game, &ui, CAPTURE_SUMMARIES);
+  CHECK(output != NULL);
+  if (output == NULL) {
+    game_destroy(&game);
+    return;
+  }
+
+  CHECK(output_is_ascii(output));
+  CHECK(
+      strstr(output, " Game quit.\033[0m Score 42, length 4, filled 3/36.\n") !=
+      NULL);
+  CHECK(strstr(output, " \x1B[92mYou win!\033[0m Score") != NULL);
+  CHECK(strstr(output, " \x1B[91mGame over: ran into the snake.\033[0m") !=
+        NULL);
+  CHECK(strstr(output, " \x1B[91mGame over: hit an obstacle.\033[0m") != NULL);
+  CHECK(strstr(output, " \x1B[91mGame over: poisoned.\033[0m") != NULL);
+  CHECK_EQ(count_occurrences(output, " \x1B[2mReplay this board:\033[0m "
+                                     "cnake 6 --seed 1729\n"),
+           5);
+
+  free(output);
   game_destroy(&game);
 }
 
@@ -625,6 +688,7 @@ int main(void) {
   test_answer_score_is_yellow();
   test_monochrome_suppresses_sgr();
   test_styling_detection();
+  test_exit_summary();
   test_rendered_rows_clear_stale_suffixes();
   test_debug_panel_matches_main_layout();
   test_short_board_columns_are_padded();

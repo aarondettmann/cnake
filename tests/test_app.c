@@ -199,6 +199,10 @@ static void test_quit_restores_terminal(void) {
     CHECK(strstr(result.output, "\033[H") != NULL);
     CHECK(strstr(result.output, "\033[0J") != NULL);
     CHECK(strstr(result.output, "\033[H\033[0J") == NULL);
+    CHECK(strstr(result.output, " Game quit. Score 0, length 1, filled ") !=
+          NULL);
+    CHECK(strstr(result.output, " Replay this board: cnake 4 --seed 1729\n") !=
+          NULL);
     CHECK(result.error[0] == '\0');
     free_result(&result);
   }
@@ -288,6 +292,7 @@ static void test_signal_restores_terminal(int signal_number) {
   if (output != NULL) {
     CHECK(strstr(output, enter_screen) != NULL);
     CHECK(strstr(output, leave_screen) != NULL);
+    CHECK(strstr(output, "Replay this board:") == NULL);
     free(output);
   }
 }
@@ -483,6 +488,7 @@ static void test_error_is_visible_after_screen_restore(void) {
   CHECK(error_message != NULL);
   if (left_screen != NULL && error_message != NULL)
     CHECK(error_message > left_screen);
+  CHECK(strstr(output, "Replay this board:") == NULL);
 
   free(output);
 }
