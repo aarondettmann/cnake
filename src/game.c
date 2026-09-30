@@ -147,7 +147,9 @@ static void respawn_tile_if_needed(struct game_state *game, bool should_respawn,
     assert(game_empty_tile_count(game) == 0);
 }
 
-static void move_head(struct game_state *game, enum direction direction) {
+static struct position adjacent_position(const struct game_state *game,
+                                         struct position from,
+                                         enum direction direction) {
   int delta_x = 0;
   int delta_y = 0;
 
@@ -166,15 +168,57 @@ static void move_head(struct game_state *game, enum direction direction) {
     break;
   }
 
+  return (struct position){
+      .x = (from.x + delta_x + game->board_size) % game->board_size,
+      .y = (from.y + delta_y + game->board_size) % game->board_size,
+  };
+}
+
+static enum direction opposite_direction(enum direction direction) {
+  switch (direction) {
+  case DIRECTION_UP:
+    return DIRECTION_DOWN;
+  case DIRECTION_DOWN:
+    return DIRECTION_UP;
+  case DIRECTION_LEFT:
+    return DIRECTION_RIGHT;
+  case DIRECTION_RIGHT:
+    return DIRECTION_LEFT;
+  }
+
+  return direction;
+}
+
+/*
+ * The previous move led from the segment behind the head to the head, so the
+ * opposite direction leads back onto that segment. Such a move is fatal unless
+ * the segment is the tail, which vacates its tile in the same step.
+ */
+static bool is_reversal_into_body(const struct game_state *game,
+                                  enum direction direction) {
+  if (direction != opposite_direction(game->direction))
+    return false;
+
+  struct position target = adjacent_position(game, game->head, direction);
+  return game_board_tile(game, target.x, target.y) > TILE_TAIL;
+}
+
+static void move_head(struct game_state *game, enum direction direction) {
   game->direction = direction;
-  game->head.x = (game->head.x + delta_x + game->board_size) % game->board_size;
-  game->head.y = (game->head.y + delta_y + game->board_size) % game->board_size;
+  game->head = adjacent_position(game, game->head, direction);
   game->stats.moves++;
 }
 
 void game_grow(struct game_state *game, int amount) { game->length += amount; }
 
-void game_step(struct game_state *game, enum direction direction) {
+/*
+ * A reversal into the body is rejected without changing the state, so that a
+ * single mistyped key does not end the game. Every other move is applied.
+ */
+bool game_step(struct game_state *game, enum direction direction) {
+  if (is_reversal_into_body(game, direction))
+    return false;
+
   struct position previous_head = game->head;
   move_head(game, direction);
 
@@ -214,7 +258,7 @@ void game_step(struct game_state *game, enum direction direction) {
   }
 
   if (game->status != GAME_RUNNING)
-    return;
+    return true;
 
   advance_snake(game, previous_head);
   respawn_tile_if_needed(game, spawn_snack, TILE_SNACK);
@@ -222,6 +266,8 @@ void game_step(struct game_state *game, enum direction direction) {
 
   if (game_empty_tile_count(game) == 0)
     game->status = GAME_WON;
+
+  return true;
 }
 
 int game_empty_tile_count(const struct game_state *game) {

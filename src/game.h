@@ -71,7 +71,9 @@ void game_destroy(struct game_state *game);
 bool game_initialize_board(struct game_state *game);
 int game_board_tile(const struct game_state *game, int x, int y);
 void game_set_board_tile(struct game_state *game, int x, int y, int value);
-void game_step(struct game_state *game, enum direction direction);
+/* Returns false, leaving the state unchanged, when the move reverses into the
+ * body. */
+bool game_step(struct game_state *game, enum direction direction);
 void game_grow(struct game_state *game, int amount);
 int game_empty_tile_count(const struct game_state *game);
 int game_score(const struct game_state *game);

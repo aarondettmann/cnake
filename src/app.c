@@ -158,20 +158,25 @@ static void restore_terminal(struct terminal_state *terminal,
     print_warning(ui, "Unable to restore terminal settings.");
 }
 
+static void move_snake(struct app_context *app, enum direction direction) {
+  if (!game_step(app->game, direction))
+    app->feedback = UI_FEEDBACK_REVERSAL;
+}
+
 static enum command_action apply_player_command(struct app_context *app,
                                                 enum player_command command) {
   switch (command) {
   case PLAYER_COMMAND_MOVE_UP:
-    game_step(app->game, DIRECTION_UP);
+    move_snake(app, DIRECTION_UP);
     break;
   case PLAYER_COMMAND_MOVE_DOWN:
-    game_step(app->game, DIRECTION_DOWN);
+    move_snake(app, DIRECTION_DOWN);
     break;
   case PLAYER_COMMAND_MOVE_LEFT:
-    game_step(app->game, DIRECTION_LEFT);
+    move_snake(app, DIRECTION_LEFT);
     break;
   case PLAYER_COMMAND_MOVE_RIGHT:
-    game_step(app->game, DIRECTION_RIGHT);
+    move_snake(app, DIRECTION_RIGHT);
     break;
   case PLAYER_COMMAND_HELP:
     return COMMAND_SHOW_HELP;
@@ -435,6 +440,13 @@ cleanup:
   restore_terminal(&terminal, &diagnostics_ui);
   if (app.error_message != NULL)
     print_error(&diagnostics_ui, app.error_message);
+  /*
+   * The final board leaves together with the alternate screen, so the result
+   * and the seed of the last round are repeated on the normal screen. A game
+   * ended by an error or a signal has no result to report.
+   */
+  if (app.error_message == NULL && !interrupted && game.board != NULL)
+    ui_print_summary(&game, app.seed, &ui);
   if (interrupted) {
     app.exit_status = 128 + interrupted;
     ui_print_interrupted_exit(&ui);

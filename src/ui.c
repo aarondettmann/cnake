@@ -423,6 +423,12 @@ static void print_tile(int tile, enum direction direction,
   }
 }
 
+/* The board is won when no empty tile remains, so this counts up to the total
+ * tile count. */
+static int filled_tile_count(const struct game_state *game) {
+  return game->board_size * game->board_size - game_empty_tile_count(game);
+}
+
 static void print_status_row(const struct game_state *game, int row,
                              const struct ui_theme *theme,
                              const struct ui_style *style) {
@@ -430,13 +436,10 @@ static void print_status_row(const struct game_state *game, int row,
 
   switch (row) {
   case 0: {
-    /* The board is won when no empty tile remains, so this row counts up to
-     * the total tile count. */
-    int tile_count = game->board_size * game->board_size;
     /* Sized for any int pair; the field width is what constrains display. */
     char filled_text[sizeof("-2147483648/-2147483648")];
-    snprintf(filled_text, sizeof(filled_text), "%d/%d",
-             tile_count - game_empty_tile_count(game), tile_count);
+    snprintf(filled_text, sizeof(filled_text), "%d/%d", filled_tile_count(game),
+             game->board_size * game->board_size);
     printf(" %s%s%s   Filled%*s ", style->cyan, theme->fill, style->reset,
            STATUS_FILLED_FIELD_WIDTH, filled_text);
     break;
@@ -790,6 +793,8 @@ static const struct ui_feedback_text FEEDBACK_TEXT[] = {
     [UI_FEEDBACK_DEBUG_OFF] = {"◆", "*", COLOR_CYAN, "Debug view off."},
     [UI_FEEDBACK_GROW] = {"!", "!", COLOR_YELLOW, "Length +5."},
     [UI_FEEDBACK_ANSWER] = {"★", "+", COLOR_YELLOW, "The answer is snake."},
+    [UI_FEEDBACK_REVERSAL] = {"!", "!", COLOR_YELLOW,
+                              "Cannot reverse onto the body."},
 };
 
 static void print_feedback_message(enum ui_feedback feedback,
@@ -902,6 +907,46 @@ enum ui_feedback ui_toggle_debug(struct ui_state *ui) {
   ui->show_debug = !ui->show_debug;
 
   return ui->show_debug ? UI_FEEDBACK_DEBUG_ON : UI_FEEDBACK_DEBUG_OFF;
+}
+
+static const char *summary_outcome(enum game_status status) {
+  switch (status) {
+  case GAME_WON:
+    return "You win!";
+  case GAME_OVER_SNAKE:
+    return "Game over: ran into the snake.";
+  case GAME_OVER_OBSTACLE:
+    return "Game over: hit an obstacle.";
+  case GAME_OVER_POISON:
+    return "Game over: poisoned.";
+  case GAME_RUNNING:
+    break;
+  }
+
+  return "Game quit.";
+}
+
+/*
+ * The summary is printed on the normal screen after the game has ended. It
+ * repeats the result of the last round together with the command line that
+ * replays its board.
+ */
+void ui_print_summary(const struct game_state *game, unsigned int seed,
+                      const struct ui_state *ui) {
+  const struct ui_style *style = style_for_ui(ui);
+  const char *color = "";
+
+  if (game->status == GAME_WON)
+    color = style->green;
+  else if (game->status != GAME_RUNNING)
+    color = style->red;
+
+  printf(" %s%s%s Score %d, length %d, filled %d/%d.\n", color,
+         summary_outcome(game->status), style->reset, game_score(game),
+         game->length, filled_tile_count(game),
+         game->board_size * game->board_size);
+  printf(" %sReplay this board:%s cnake %d --seed %u\n", style->dim,
+         style->reset, game->board_size, seed);
 }
 
 void ui_print_interrupted_exit(const struct ui_state *ui) {

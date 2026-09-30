@@ -14,7 +14,8 @@ panel tracks that goal as the number of filled tiles out of the board total.
 Eating snacks increases the snake's length, while poison shortens it. Colliding
 with obstacles, running into the snake's own body, or consuming poison at the
 minimum length is fatal. The tail moves out of the way in the same step, so
-moving onto it is safe.
+moving onto it is safe. A move straight back onto the body segment behind the
+head is ignored, so a single mistyped key does not end the game.
 
 **Controls**
 
@@ -71,6 +72,14 @@ value. `--monochrome` disables it unconditionally.
 The seed reproduces the same board and subsequent random tile placements when
 using the same C library implementation. A seeded game replays the same board on
 every retry; without `--seed`, each retry starts from a new board.
+
+After quitting, the result of the last round and the command that replays its
+board remain on the normal screen:
+
+```
+ Game over: hit an obstacle. Score 15, length 2, filled 7/25.
+ Replay this board: cnake 5 --seed 7
+```
 
 ---
 
