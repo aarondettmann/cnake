@@ -303,6 +303,19 @@ static void test_reversal_into_body_is_rejected(void) {
   CHECK(game_step(&game, DIRECTION_RIGHT));
   CHECK_EQ(game.status, GAME_OVER_SNAKE);
 
+  /* A tail that keeps its tile while the body grows counts as body. */
+  clear_fixture(&game);
+  place_head(&game, 0, 0);
+  game_grow(&game, 5);
+
+  CHECK(game_step(&game, DIRECTION_RIGHT));
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_TAIL);
+  CHECK(!game_step(&game, DIRECTION_LEFT));
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game.stats.moves, 1);
+  CHECK_EQ(game.head.x, 1);
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_TAIL);
+
   game_destroy(&game);
 }
 
@@ -392,7 +405,67 @@ static void test_nonfatal_poison_shrink_and_respawn(void) {
   game_destroy(&game);
 }
 
+/* A snake of length 4 along the top row, with the head at the right end. */
+static void place_four_segment_snake(struct game_state *game) {
+  clear_fixture(game);
+  game->length = 4;
+  place_head(game, 3, 0);
+  game_set_board_tile(game, 2, 0, 3);
+  game_set_board_tile(game, 1, 0, 2);
+  game_set_board_tile(game, 0, 0, TILE_TAIL);
+}
+
+/* A snack or poison changes the body on the board in the same step. */
+static void test_length_change_reaches_board_at_once(void) {
+  struct game_state game;
+  if (!create_game(&game, 4))
+    exit(EXIT_FAILURE);
+
+  place_four_segment_snake(&game);
+  game_set_board_tile(&game, 3, 1, TILE_SNACK);
+
+  srand(3u);
+  game_step(&game, DIRECTION_DOWN);
+
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game.length, 5);
+  CHECK_EQ(game_board_tile(&game, 3, 1), TILE_HEAD);
+  CHECK_EQ(game_board_tile(&game, 3, 0), 4);
+  CHECK_EQ(game_board_tile(&game, 2, 0), 3);
+  CHECK_EQ(game_board_tile(&game, 1, 0), 2);
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_TAIL);
+  CHECK_EQ(count_positive_tiles(&game), 4);
+
+  place_four_segment_snake(&game);
+  game_set_board_tile(&game, 3, 1, TILE_POISON);
+
+  srand(3u);
+  game_step(&game, DIRECTION_DOWN);
+
+  CHECK_EQ(game.status, GAME_RUNNING);
+  CHECK_EQ(game.length, 3);
+  CHECK_EQ(game_board_tile(&game, 3, 1), TILE_HEAD);
+  CHECK_EQ(game_board_tile(&game, 3, 0), 2);
+  CHECK_EQ(game_board_tile(&game, 2, 0), TILE_TAIL);
+  CHECK_EQ(game_board_tile(&game, 1, 0), TILE_EMPTY);
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_EMPTY);
+  CHECK_EQ(count_positive_tiles(&game), 2);
+  CHECK_EQ(count_tiles(&game, TILE_TAIL), 1);
+
+  game_destroy(&game);
+}
+
+/*
+ * The body gains one segment per step until it matches the length. Until
+ * then the tail keeps its tile, so moving onto it is fatal.
+ */
 static void test_manual_growth(void) {
+  static const enum direction moves[] = {
+      DIRECTION_RIGHT, DIRECTION_RIGHT, DIRECTION_RIGHT,
+      DIRECTION_DOWN,  DIRECTION_DOWN,  DIRECTION_DOWN,
+  };
+  static const int segment_counts[] = {1, 2, 3, 4, 5, 5};
+
   struct game_state game;
   if (!create_game(&game, 4))
     exit(EXIT_FAILURE);
@@ -403,11 +476,30 @@ static void test_manual_growth(void) {
 
   CHECK_EQ(game.length, 6);
 
-  game_step(&game, DIRECTION_RIGHT);
+  for (size_t step = 0; step < sizeof(moves) / sizeof(moves[0]); step++) {
+    game_step(&game, moves[step]);
 
-  CHECK_EQ(game_board_tile(&game, 1, 0), TILE_HEAD);
-  CHECK_EQ(game_board_tile(&game, 0, 0), 5);
-  CHECK_EQ(count_positive_tiles(&game), 1);
+    CHECK_EQ(game.status, GAME_RUNNING);
+    CHECK_EQ(count_positive_tiles(&game), segment_counts[step]);
+    CHECK_EQ(count_tiles(&game, TILE_TAIL), 1);
+  }
+
+  CHECK_EQ(game_board_tile(&game, 3, 3), TILE_HEAD);
+  CHECK_EQ(game_board_tile(&game, 3, 2), 5);
+  CHECK_EQ(game_board_tile(&game, 1, 0), TILE_TAIL);
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_EMPTY);
+
+  /* The head wraps onto the tail while the body is still growing. */
+  clear_fixture(&game);
+  place_head(&game, 0, 0);
+  game_grow(&game, 5);
+
+  for (int step = 0; step < 3; step++)
+    game_step(&game, DIRECTION_RIGHT);
+
+  CHECK_EQ(game_board_tile(&game, 0, 0), TILE_TAIL);
+  game_step(&game, DIRECTION_RIGHT);
+  CHECK_EQ(game.status, GAME_OVER_SNAKE);
 
   game_destroy(&game);
 }
@@ -508,6 +600,7 @@ int main(void) {
   test_fatal_poison_collision();
   test_snack_growth_and_respawn();
   test_nonfatal_poison_shrink_and_respawn();
+  test_length_change_reaches_board_at_once();
   test_manual_growth();
   test_full_board_win_detection();
   test_empty_tile_count();

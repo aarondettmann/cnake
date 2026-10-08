@@ -119,19 +119,68 @@ bool game_initialize_board(struct game_state *game) {
 }
 
 /*
- * Store the current length at the old head, then decrement every positive
- * board value. The countdown naturally removes the tail at zero.
+ * Body segments hold the values 1 to the number of segments behind the head,
+ * so the largest board value is that number.
+ */
+static int body_segment_count(const struct game_state *game) {
+  int tile_count = game->board_size * game->board_size;
+  int count = 0;
+
+  for (int index = 0; index < tile_count; index++) {
+    if (game->board[index] > count)
+      count = game->board[index];
+  }
+
+  return count;
+}
+
+/*
+ * The body on the board gains at most one segment per step, so an increase in
+ * length by more than one, as from game_grow, is drawn over several steps.
+ * During such a step the tail keeps its tile. Poison eaten during these steps
+ * lowers the target, but the body still gains a segment while it remains below
+ * the target.
+ */
+static int next_body_segment_count(const struct game_state *game, int count) {
+  int target = game->length - 1;
+  return target > count + 1 ? count + 1 : target;
+}
+
+/*
+ * Move the body one tile towards the head and bring the number of segments on
+ * the board to next_body_segment_count. Every segment is lowered by the number
+ * of tiles that leave the tail end: 1 for a plain move, 0 after a snack and 2
+ * after poison. A segment lowered to zero or below is removed.
  */
 static void advance_snake(struct game_state *game,
                           struct position previous_head) {
-  game_set_board_tile(game, game->head.x, game->head.y, TILE_HEAD);
-  game_set_board_tile(game, previous_head.x, previous_head.y, game->length);
+  int count = body_segment_count(game);
+  int next_count = next_body_segment_count(game, count);
+  int decrement = count + 1 - next_count;
 
   int tile_count = game->board_size * game->board_size;
   for (int index = 0; index < tile_count; index++) {
-    if (game->board[index] > TILE_EMPTY)
-      game->board[index]--;
+    int tile = game->board[index];
+    if (tile > TILE_EMPTY)
+      game->board[index] = tile > decrement ? tile - decrement : TILE_EMPTY;
   }
+
+  game_set_board_tile(game, game->head.x, game->head.y, TILE_HEAD);
+  game_set_board_tile(game, previous_head.x, previous_head.y, next_count);
+}
+
+/*
+ * A body segment occupies its tile after the next step unless it is the tail
+ * and the tail moves. The tail stays only while the body is still growing
+ * towards game->length.
+ */
+static bool is_body_collision(const struct game_state *game, int tile) {
+  if (tile == TILE_TAIL) {
+    int count = body_segment_count(game);
+    return next_body_segment_count(game, count) > count;
+  }
+
+  return tile > TILE_TAIL;
 }
 
 /*
@@ -192,7 +241,7 @@ static enum direction opposite_direction(enum direction direction) {
 /*
  * The previous move led from the segment behind the head to the head, so the
  * opposite direction leads back onto that segment. Such a move is fatal unless
- * the segment is the tail, which vacates its tile in the same step.
+ * the segment is a tail that vacates its tile in the same step.
  */
 static bool is_reversal_into_body(const struct game_state *game,
                                   enum direction direction) {
@@ -200,7 +249,7 @@ static bool is_reversal_into_body(const struct game_state *game,
     return false;
 
   struct position target = adjacent_position(game, game->head, direction);
-  return game_board_tile(game, target.x, target.y) > TILE_TAIL;
+  return is_body_collision(game, game_board_tile(game, target.x, target.y));
 }
 
 static void move_head(struct game_state *game, enum direction direction) {
@@ -226,9 +275,7 @@ bool game_step(struct game_state *game, enum direction direction) {
   bool spawn_snack = false;
   bool spawn_poison = false;
 
-  /* The tail vacates its tile during this step, so only the rest of the body
-   * is a collision. */
-  if (tile > TILE_TAIL) {
+  if (is_body_collision(game, tile)) {
     game->status = GAME_OVER_SNAKE;
   } else {
     switch (tile) {
