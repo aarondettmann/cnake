@@ -26,6 +26,7 @@ static_assert(MAX_BOARD_SIZE * MAX_BOARD_SIZE < 1000,
 /* Width of the help panel between its frame characters. */
 #define HELP_INNER_WIDTH 30
 #define HELP_TITLE " CONTROLS "
+#define HELP_DEVELOPER_TITLE " DEVELOPER KEYS "
 
 #define COLOR_RED "\x1B[91m"
 #define COLOR_GREEN "\x1B[92m"
@@ -731,35 +732,51 @@ static void print_help_option(const struct ui_theme *theme, const char *command,
   finish_line();
 }
 
-static void print_help(const struct ui_state *ui) {
-  const struct ui_theme *theme = theme_for_ui(ui);
-  const struct ui_style *style = style_for_ui(ui);
-  int title_width = (int)strlen(HELP_TITLE);
+/*
+ * A horizontal frame line with an optional title centred in it. The caller
+ * finishes the line, so that a reset can precede the line end.
+ */
+static void print_help_rule(const char *left, const char *title,
+                            const char *right, const struct ui_theme *theme,
+                            const struct ui_style *style) {
+  int title_width = title != NULL ? (int)strlen(title) : 0;
   int left_fill = (HELP_INNER_WIDTH - title_width) / 2;
   int right_fill = HELP_INNER_WIDTH - title_width - left_fill;
 
-  printf(" %s%s", style->cyan, theme->top_left);
+  printf(" %s%s", style->cyan, left);
   print_repeated(theme->horizontal, left_fill);
-  printf("%s", HELP_TITLE);
+  if (title != NULL)
+    printf("%s", title);
   print_repeated(theme->horizontal, right_fill);
-  printf("%s", theme->top_right);
+  printf("%s", right);
+}
+
+/*
+ * The debug view and the growth cheat are developer controls, so they follow
+ * the gameplay controls under a separate title.
+ */
+static void print_help(const struct ui_state *ui) {
+  const struct ui_theme *theme = theme_for_ui(ui);
+  const struct ui_style *style = style_for_ui(ui);
+
+  print_help_rule(theme->top_left, HELP_TITLE, theme->top_right, theme, style);
   finish_line();
 
   for (size_t index = 0;
        index < sizeof(HELP_DIAGRAM_ROWS) / sizeof(*HELP_DIAGRAM_ROWS); index++)
     print_help_diagram_row(HELP_DIAGRAM_ROWS[index], theme, style);
 
-  printf(" %s", theme->middle_left);
-  print_repeated(theme->horizontal, HELP_INNER_WIDTH);
-  printf("%s", theme->middle_right);
+  print_help_rule(theme->middle_left, NULL, theme->middle_right, theme, style);
   finish_line();
   print_help_option(theme, "?", "Show help", style);
+  print_help_option(theme, "q", "Quit", style);
+  print_help_rule(theme->middle_left, HELP_DEVELOPER_TITLE, theme->middle_right,
+                  theme, style);
+  finish_line();
   print_help_option(theme, "v", "Toggle debug view", style);
   print_help_option(theme, "c", "Add five segments", style);
-  print_help_option(theme, "q", "Quit", style);
-  printf(" %s", theme->bottom_left);
-  print_repeated(theme->horizontal, HELP_INNER_WIDTH);
-  printf("%s%s", theme->bottom_right, style->reset);
+  print_help_rule(theme->bottom_left, NULL, theme->bottom_right, theme, style);
+  printf("%s", style->reset);
   finish_line();
 }
 

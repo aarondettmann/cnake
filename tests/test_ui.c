@@ -310,10 +310,12 @@ static void test_ascii_messages(void) {
     if (plain_output != NULL) {
       CHECK(strstr(plain_output, "+ The answer is snake.") != NULL);
       CHECK(strstr(plain_output, "+---------- CONTROLS ----------+") != NULL);
-      CHECK(strstr(plain_output, "Show help") != NULL);
-      CHECK(strstr(plain_output, "Toggle debug view") != NULL);
-      CHECK(strstr(plain_output, "Add five segments") != NULL);
-      CHECK(strstr(plain_output, "Quit") != NULL);
+      CHECK(strstr(plain_output, "| ? Show help                  |\n"
+                                 " | q Quit                       |\n"
+                                 " +------- DEVELOPER KEYS -------+\n"
+                                 " | v Toggle debug view          |\n"
+                                 " | c Add five segments          |\n"
+                                 " +------------------------------+") != NULL);
       CHECK(strstr(plain_output, "Return [any key] / Quit [q]:") != NULL);
       CHECK(strstr(plain_output, " x Error:") != NULL);
     }
@@ -553,7 +555,7 @@ static void test_rendered_rows_clear_stale_suffixes(void) {
   char *message_output = capture_ui_output(&game, &ui, CAPTURE_MESSAGES);
   CHECK(message_output != NULL);
   if (message_output != NULL) {
-    CHECK_EQ(count_occurrences(message_output, "\033[0K\n"), 12);
+    CHECK_EQ(count_occurrences(message_output, "\033[0K\n"), 13);
     free(message_output);
   }
 
