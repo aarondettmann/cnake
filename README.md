@@ -14,8 +14,9 @@ panel tracks that goal as the number of filled tiles out of the board total.
 Eating snacks increases the snake's length, while poison shortens it. Colliding
 with obstacles, running into the snake's own body, or consuming poison at the
 minimum length is fatal. The tail moves out of the way in the same step, so
-moving onto it is safe. A move straight back onto the body segment behind the
-head is ignored, so a single mistyped key does not end the game.
+moving onto it is safe, except while the snake grows after `c`. A move straight
+back onto the body segment behind the head is ignored, so a single mistyped key
+does not end the game.
 
 **Controls**
 
