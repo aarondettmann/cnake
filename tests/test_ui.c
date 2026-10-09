@@ -275,12 +275,12 @@ static void test_ascii_board_rendering(void) {
     CHECK(strstr(plain_output, " | . * . # . . |") != NULL);
     const char *score_row = strstr(plain_output, "| +   Score       97 |");
     const char *filled_row = strstr(plain_output, "| %   Filled    5/36 |");
-    const char *snake_row = strstr(plain_output, "Snake");
+    const char *length_row = strstr(plain_output, "| ==> Length       3 |");
     CHECK(score_row != NULL);
     CHECK(filled_row != NULL);
-    CHECK(snake_row != NULL);
-    CHECK(filled_row < snake_row);
-    CHECK(snake_row < score_row);
+    CHECK(length_row != NULL);
+    CHECK(filled_row < length_row);
+    CHECK(length_row < score_row);
     /* The obstacle count is fixed at setup and no longer has a row. */
     CHECK(strstr(plain_output, "Obstacle") == NULL);
     CHECK(strstr(plain_output, " SCORE ") == NULL);
