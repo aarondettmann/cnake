@@ -29,9 +29,10 @@ does not end the game.
 |   also: arrow keys, wasd     |
 +------------------------------+
 | ? Show help                  |
+| q Quit                       |
++------- DEVELOPER KEYS -------+
 | v Toggle debug view          |
 | c Add five segments          |
-| q Quit                       |
 +------------------------------+
 ```
 
