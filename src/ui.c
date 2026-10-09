@@ -10,7 +10,7 @@
 #define STATUS_INNER_WIDTH 20
 #define STATUS_DEBUG_GAP_WIDTH 3
 
-/* Filled, snake, score, snack and poison rows. */
+/* Filled, length, score, snack and poison rows. */
 #define STATUS_ROW_COUNT 5
 
 /*
@@ -446,7 +446,7 @@ static void print_status_row(const struct game_state *game, int row,
     break;
   }
   case 1:
-    printf(" %s%s%s%s%s Snake     %4d ", style->green, theme->body, theme->body,
+    printf(" %s%s%s%s%s Length    %4d ", style->green, theme->body, theme->body,
            theme->head_right, style->reset, game->length);
     break;
   case 2: {
