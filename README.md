@@ -103,6 +103,9 @@ Use the same prefix to uninstall:
 make uninstall PREFIX="$HOME/.local"
 ```
 
+`./install.sh` builds and installs into `~/.local`, or into `PREFIX` if
+set.
+
 Packagers can stage an installation by setting `DESTDIR`.
 
 Remove the compiled binary and `build/` artifacts with `make clean`.
